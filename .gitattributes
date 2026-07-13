@@ -1,0 +1,8 @@
+# Force LF on files that run on the Linux server, regardless of the Windows
+# checkout's autocrlf — a CRLF in a bash script breaks it with '\r' errors.
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.py    text eol=lf
+*.cjs   text eol=lf
+*.conf  text eol=lf
