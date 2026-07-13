@@ -1,9 +1,10 @@
 # Validated on the server's Python 3.14 (prebuilt wheels, no compile).
-# socketio/engineio pinned to the 4.x / 3.x line on purpose: they speak
-# Engine.IO v3, which is what the phone client's socket.io 2.3.0 JS expects.
+# socketio 5.x / engineio 4.x are the maintained line and work on modern asyncio
+# (the old 4.x/EIO3 stack crashes on Python 3.12+ with "Passing coroutines is
+# forbidden"). Phones use socket.io 4.x JS; TouchDesigner uses the raw /ws path,
+# so it is NOT bound to any Socket.IO protocol version.
 aiohttp>=3.10,<4
-python-socketio>=4.6,<5
-python-engineio>=3.14,<4
+python-socketio>=5.11
 python-osc>=1.8
 # Local testing helpers only (td_emulator.py / test_simulation.py):
 requests>=2.31

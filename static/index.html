@@ -6,8 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Collective Scroll</title>
     <link rel="stylesheet" href="static/style.css">
-    <!-- CDN: Socket.IO v2.3.0 (Compatible with TouchDesigner) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+    <!-- Socket.IO 4.x client (matches python-socketio 5.x on the server). TD does
+         NOT use this — it connects via the raw WebSocket /ws path. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
     <script src="static/app.js" defer></script>
 </head>
 
