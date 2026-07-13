@@ -195,6 +195,10 @@ async def keepalive_task(app):
         for ws in list(active_websockets):
             try:
                 await ws.send_json({'event': 'keepalive', 'data': {}})
+                # Protocol-level ping too. Unlike aiohttp's heartbeat=, this does
+                # NOT force-close on a missing pong, so it's safe even if a client
+                # never pongs — it just adds a liveness probe for clients that do.
+                await ws.ping()
             except Exception:
                 dead.add(ws)
         for ws in dead:

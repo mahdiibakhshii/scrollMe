@@ -80,16 +80,33 @@ def onReceiveText(dat, rowIndex, message):
         return
     event = msg.get('event')
     if event == 'keepalive':
-        return                       # server heartbeat — ignore
+        # Pong back so there's live traffic in BOTH directions (keeps the link
+        # and any NAT mapping fresh). Purely for stability; the server does not
+        # require it.
+        try:
+            dat.sendText('{"type":"pong"}')
+        except Exception:
+            pass
+        return
     if event == 'trigger_scroll':
         op(TARGET).click()           # advance to the next reel
     # future events arrive here too — just switch on `event`
     return
+
+# Optional: if your TD build delivers protocol-level pings to a callback, answer
+# them too. Harmless if this callback is never called.
+def onReceivePing(dat, contents):
+    try:
+        dat.sendPong(contents)
+    except Exception:
+        pass
+    return
 ```
 
-> The server sends a `keepalive` every ~15s so the connection never idles out
-> (TouchDesigner's WebSocket DAT doesn't answer protocol pings, which is what
-> caused earlier ~30s disconnects). `onDisconnect` above then covers real drops.
+> The server sends a `keepalive` (+ a protocol ping) every ~15s so the connection
+> never idles out — that's what fixed the earlier ~30s disconnects (TD's
+> WebSocket DAT doesn't auto-pong protocol pings). The `sendText` pong above adds
+> upstream traffic for extra stability, and `onDisconnect` covers real drops.
 
 ### Option B — SocketIO DAT
 
