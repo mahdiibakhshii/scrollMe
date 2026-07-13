@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Local env / secrets — never commit ADMIN_TOKEN etc.
+.env
+*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Nothing from the content pipeline belongs in this repo (it lives in the
+# SurfScroll parent, not here) — but guard against accidental drops:
+*.mp4
+*.info.json
