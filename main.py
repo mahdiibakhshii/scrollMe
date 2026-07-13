@@ -1,3 +1,4 @@
+import asyncio
 import socketio
 from aiohttp import web
 import config
@@ -157,9 +158,16 @@ async def admin_event(request):
 
 
 async def websocket_handler(request):
-    """Raw WebSocket for TouchDesigner. TD connects OUT to ws://<host>/ws and the
-    server pushes events down as JSON: {"event": <type>, "data": <payload>}."""
-    ws = web.WebSocketResponse(heartbeat=30)
+    """Raw WebSocket for TouchDesigner. TD connects OUT to ws://<host>/ws (or the
+    root path) and the server pushes events down as JSON:
+    {"event": <type>, "data": <payload>}.
+
+    No aiohttp `heartbeat=` here on purpose: it pings and then CLOSES the socket
+    if no pong comes back, and TouchDesigner's WebSocket DAT doesn't reliably
+    pong — that caused the ~30s disconnects. Instead the keepalive_task below
+    sends an app-level {"event":"keepalive"} every few seconds, which keeps the
+    connection warm through TD + NAT + nginx without needing a pong."""
+    ws = web.WebSocketResponse()
     await ws.prepare(request)
 
     print("--> TouchDesigner (Raw WS) connected")
@@ -176,6 +184,35 @@ async def websocket_handler(request):
 
     return ws
 
+
+async def keepalive_task(app):
+    """Push a lightweight keepalive to every TD WebSocket on a fixed interval so
+    the connection never sits idle long enough for TD / NAT / nginx to drop it,
+    and prune any socket that has quietly died."""
+    while True:
+        await asyncio.sleep(config.KEEPALIVE_INTERVAL)
+        dead = set()
+        for ws in list(active_websockets):
+            try:
+                await ws.send_json({'event': 'keepalive', 'data': {}})
+            except Exception:
+                dead.add(ws)
+        for ws in dead:
+            active_websockets.discard(ws)
+
+
+async def _on_startup(app):
+    app['keepalive'] = asyncio.create_task(keepalive_task(app))
+
+
+async def _on_cleanup(app):
+    task = app.get('keepalive')
+    if task:
+        task.cancel()
+
+
+app.on_startup.append(_on_startup)
+app.on_cleanup.append(_on_cleanup)
 
 app.router.add_get('/', index)
 app.router.add_get('/admin', admin_page)

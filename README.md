@@ -59,8 +59,18 @@ laptop).
 ```python
 import json
 
+TARGET = 'button1'   # your Button COMP to pulse on trigger_scroll
+
 def onConnect(dat):
-    debug('WebSocket connected to server')
+    debug('WebSocket connected')
+    return
+
+def onDisconnect(dat):
+    # Auto-reconnect: toggle Active off then back on a couple seconds later so any
+    # drop (network blip, server restart) re-links itself without manual reset.
+    debug('WebSocket disconnected — reconnecting')
+    run(f"op({dat.path!r}).par.active = 0", delayFrames=1)
+    run(f"op({dat.path!r}).par.active = 1", delayFrames=120)   # ~2s at 60fps
     return
 
 def onReceiveText(dat, rowIndex, message):
@@ -68,11 +78,18 @@ def onReceiveText(dat, rowIndex, message):
         msg = json.loads(message)
     except Exception:
         return
-    if msg.get('event') == 'trigger_scroll':
-        op('button1').click()   # advance to the next reel (your Button COMP)
-    # future events arrive here too — just switch on msg.get('event')
+    event = msg.get('event')
+    if event == 'keepalive':
+        return                       # server heartbeat — ignore
+    if event == 'trigger_scroll':
+        op(TARGET).click()           # advance to the next reel
+    # future events arrive here too — just switch on `event`
     return
 ```
+
+> The server sends a `keepalive` every ~15s so the connection never idles out
+> (TouchDesigner's WebSocket DAT doesn't answer protocol pings, which is what
+> caused earlier ~30s disconnects). `onDisconnect` above then covers real drops.
 
 ### Option B — SocketIO DAT
 
