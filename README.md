@@ -51,21 +51,26 @@ laptop).
 
 1. Add a **WebSocket DAT**.
 2. **Network Address:** `<server-ip>` (e.g. `167.233.102.255`)
-   **Network Port:** `8080`  **Request URL / path:** `/ws`  **Active:** `On`
-   (locally: address `localhost`, port `8080`, path `/ws`.)
+   **Network Port:** `8080`  **Active:** `On`. No path needed — the server accepts
+   the WebSocket on the **root path**, which is all the DAT can target.
+   (The `/ws` path also works for clients that can set one.)
 3. In its callbacks DAT, parse the JSON envelope `{"event": ..., "data": ...}`:
 
 ```python
 import json
 
+def onConnect(dat):
+    debug('WebSocket connected to server')
+    return
+
 def onReceiveText(dat, rowIndex, message):
-    msg = json.loads(message)
-    event = msg.get('event')
-    data  = msg.get('data', {})
-    if event == 'trigger_scroll':
-        # advance to the next reel
-        pass
-    # future events arrive here too — just switch on `event`
+    try:
+        msg = json.loads(message)
+    except Exception:
+        return
+    if msg.get('event') == 'trigger_scroll':
+        op('button1').click()   # advance to the next reel (your Button COMP)
+    # future events arrive here too — just switch on msg.get('event')
     return
 ```
 
