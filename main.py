@@ -106,6 +106,11 @@ async def swipe(sid, data):
 # --- HTTP routes -----------------------------------------------------------
 
 async def index(request):
+    # TouchDesigner's WebSocket DAT connects to the ROOT path (it exposes only
+    # Network Address + Network Port, no path field), so accept a WebSocket
+    # upgrade here too. Normal browsers still get the phone page.
+    if request.headers.get('Upgrade', '').lower() == 'websocket':
+        return await websocket_handler(request)
     return web.FileResponse('./static/index.html')
 
 
