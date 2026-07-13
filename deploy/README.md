@@ -11,7 +11,9 @@ TouchDesigner (laptop) ──WS──▶ ws://<ip>:8080/ws ───────
 GitHub push to main ─▶ Actions: SSH ─▶ git pull + pip install + pm2 restart
 ```
 
-Public URL: **http://167.233.102.255:8080** · Performer console: **/admin** · Health: **/healthz**
+Public URL: **http://167.233.102.255** (port 80 — required on exhibition/guest
+Wi-Fi, which blocks 8080; matched by the box IP as Host so CityLeaks is
+untouched). Port 8080 also works on permissive networks. · Console: **/admin** · Health: **/healthz**
 
 ## Ports on the shared box
 

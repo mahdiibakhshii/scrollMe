@@ -20,7 +20,9 @@ performer ──▶ /admin console ──▶ /admin/event ──▶ (same event 
 
 ## Deployment (production)
 
-Runs on the shared CityLeaks Hetzner box, public on **http://<server-ip>:8080**,
+Runs on the shared CityLeaks Hetzner box, public on **http://167.233.102.255**
+(port 80 — exhibition/guest Wi-Fi blocks odd ports like 8080; port 80 is also
+served, and 8080 still works on permissive networks),
 under PM2, behind nginx, auto-deployed by GitHub Actions on every push to `main`.
 See [`deploy/README.md`](deploy/README.md) for the full runbook, ports, and
 first-time bootstrap.
@@ -50,10 +52,11 @@ laptop).
 ### Option A — Raw WebSocket DAT (recommended over the internet)
 
 1. Add a **WebSocket DAT**.
-2. **Network Address:** `<server-ip>` (e.g. `167.233.102.255`)
-   **Network Port:** `8080`  **Active:** `On`. No path needed — the server accepts
-   the WebSocket on the **root path**, which is all the DAT can target.
-   (The `/ws` path also works for clients that can set one.)
+2. **Network Address:** `167.233.102.255`
+   **Network Port:** `80`  **Active:** `On`. Use **80** (not 8080) — venue/guest
+   networks block odd ports. No path needed — the server accepts the WebSocket on
+   the **root path**, which is all the DAT can target. (`/ws` also works, as does
+   `8080` on permissive networks.)
 3. In its callbacks DAT, parse the JSON envelope `{"event": ..., "data": ...}`:
 
 ```python
