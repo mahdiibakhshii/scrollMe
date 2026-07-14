@@ -15,23 +15,89 @@ html {
     height: 100%;
     overflow: hidden;
     /* Prevent native scrolling */
-    background-color: #000000;
+    background-color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* The Main Screen */
+/* Full-viewport stage screens, stacked; only one visible at a time */
 .screen {
-    width: 100%;
-    height: 100%;
+    position: fixed;
+    inset: 0;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
+    background-color: #ffffff;
+    transition: background-color 0.4s ease;
+}
+
+.hidden {
+    display: none;
+}
+
+body.black,
+body.black .screen {
     background-color: #000000;
 }
 
-/* Display the image filling the screen gracefully */
-#status-image {
+/* Centered stage text */
+#main-text {
+    color: #000000;
+    font-size: 9vw;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-align: center;
+    padding: 0 6vw;
+    transition: transform 0.2s ease-out, opacity 0.4s ease;
+}
+
+body.black #main-text {
+    color: #ffffff;
+}
+
+/* Swipe feedback nudge */
+#main-text.nudge {
+    transform: translateY(-18px);
+}
+
+/* Stage image */
+#stage-image {
     width: 100%;
     height: 100%;
-    object-fit: cover; /* Important to make sure the image covers the entire mobile screen */
-    transition: opacity 0.5s ease, transform 0.2s ease-out;
+    object-fit: cover;
+}
+
+/* Poll */
+#poll-question {
+    color: #000000;
+    font-size: 7vw;
+    font-weight: 600;
+    text-align: center;
+    padding: 0 8vw;
+    margin-bottom: 10vh;
+}
+
+#poll-options {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 78%;
+}
+
+.poll-opt {
+    font: inherit;
+    font-size: 6vw;
+    font-weight: 600;
+    color: #000000;
+    background: #ffffff;
+    border: 3px solid #000000;
+    border-radius: 16px;
+    padding: 5vh 4vw;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.poll-opt.selected {
+    background: #000000;
+    color: #ffffff;
 }

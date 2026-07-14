@@ -13,8 +13,23 @@
 </head>
 
 <body>
-    <div id="app" class="screen">
-        <img id="status-image" src="static/images/1.jpg" alt="Scroll Progress">
+    <!-- Default stage screen: white with centered text -->
+    <div id="screen-text" class="screen">
+        <div id="main-text">Scroll me</div>
+    </div>
+
+    <!-- Stage screen: full-bleed image -->
+    <div id="screen-image" class="screen hidden">
+        <img id="stage-image" alt="">
+    </div>
+
+    <!-- Poll overlay: question + two options -->
+    <div id="screen-poll" class="screen hidden">
+        <div id="poll-question"></div>
+        <div id="poll-options">
+            <button class="poll-opt" data-i="0"></button>
+            <button class="poll-opt" data-i="1"></button>
+        </div>
     </div>
 </body>
 

@@ -4,6 +4,7 @@ from aiohttp import web
 import config
 from osc_client import OSCClient
 from events import EventBus
+from stages import STAGES
 
 # Initialize Socket.IO Server
 sio = socketio.AsyncServer(async_mode='aiohttp', cors_allowed_origins='*')
@@ -14,13 +15,100 @@ sio.attach(app)
 osc_client = OSCClient(config.OSC_IP, config.OSC_PORT) if config.OSC_ENABLED else None
 
 # State
-connected_clients = set()
-triggered_clients = set()
-active_websockets = set()
+connected_clients = set()   # audience phones (Socket.IO sids)
+triggered_clients = set()   # phones that swiped in the current round
+admins = set()              # performer console sids (excluded from audience counts)
+active_websockets = set()   # raw WS connections (TouchDesigner)
+
+# Performance stage — index into STAGES. The performer drives this from /admin;
+# every change is broadcast to phones + TD as `stage_update`. Boot into the
+# scroll stage so the plain swipe→threshold→TD loop works with no admin action.
+current_stage_index = next((i for i, s in enumerate(STAGES) if s['id'] == 'scroll'), 0)
+
+# Live poll — one at a time. Votes are keyed by sid so a re-tap changes the
+# vote instead of double-counting.
+poll_state = {'active': False, 'question': '', 'options': [], 'votes': {}}
 
 # Event bus — the single fan-out point to phones, TouchDesigner (raw WS + Socket.IO)
 # and OSC. Add new triggers by calling bus.broadcast('event_name', {...}).
 bus = EventBus(sio, active_websockets, osc_client)
+
+
+def current_stage():
+    return STAGES[current_stage_index]
+
+
+def stage_payload():
+    s = current_stage()
+    return {'stage': s['id'], 'index': current_stage_index, 'config': s}
+
+
+def poll_counts():
+    counts = [0] * len(poll_state['options'])
+    for idx in poll_state['votes'].values():
+        if 0 <= idx < len(counts):
+            counts[idx] += 1
+    return counts
+
+
+def poll_payload():
+    return {
+        'active': poll_state['active'],
+        'question': poll_state['question'],
+        'options': poll_state['options'],
+        'counts': poll_counts(),
+        'total': len(poll_state['votes']),
+    }
+
+
+async def start_poll(question, options):
+    poll_state.update(active=True, question=question,
+                      options=list(options), votes={})
+    await bus.broadcast('poll_start', {'question': question, 'options': list(options)})
+    await emit_poll_update()
+
+
+async def end_poll():
+    if not poll_state['active']:
+        return
+    poll_state['active'] = False
+    await bus.broadcast('poll_end', poll_payload())
+    await emit_poll_update()
+
+
+async def emit_poll_update():
+    """Live vote tally — admins only."""
+    await sio.emit('poll_update', poll_payload(), room='admins')
+
+
+async def apply_stage(stage_id):
+    """Switch the performance to a stage: broadcast to phones + TD, run the
+    stage's side effects (vibrate on entry, start/stop its poll)."""
+    global current_stage_index
+    for i, s in enumerate(STAGES):
+        if s['id'] == stage_id:
+            current_stage_index = i
+            break
+    else:
+        return False
+
+    s = current_stage()
+    triggered_clients.clear()  # each stage starts a fresh swipe round
+
+    # A running poll doesn't survive into a stage that doesn't declare one.
+    if poll_state['active'] and not s.get('poll'):
+        await end_poll()
+
+    await bus.broadcast('stage_update', stage_payload())
+
+    if s.get('vibrate_ms'):
+        await bus.broadcast('vibrate', {'pattern': [s['vibrate_ms']]})
+
+    if s.get('poll'):
+        await start_poll(s['poll']['question'], s['poll']['options'])
+
+    await broadcast_stats()
+    return True
 
 
 async def trigger_collective_action():
@@ -39,10 +127,7 @@ async def trigger_collective_action():
 
 
 async def broadcast_stats():
-    """Send current progress to all clients"""
-    if not connected_clients:
-        return
-
+    """Send current progress to all clients (admins listen too)."""
     active_count = len(connected_clients)
     trigger_count = len(triggered_clients)
     percentage = trigger_count / active_count if active_count > 0 else 0.0
@@ -50,8 +135,11 @@ async def broadcast_stats():
 
     await sio.emit('stats_update', {
         'active_users': active_count,
+        'triggered': trigger_count,
         'progress': percentage,
-        'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD
+        'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD,
+        'stage': current_stage()['id'],
+        'td_connected': len(active_websockets),
     })
 
 
@@ -63,11 +151,21 @@ async def connect(sid, environ):
     # Treat everyone as a client (Simplification requested by user)
     print(f"--> Client connected: {sid}")
     connected_clients.add(sid)
+
+    # Sync the newcomer to where the performance currently is.
+    await sio.emit('stage_update', stage_payload(), room=sid)
+    if poll_state['active']:
+        await sio.emit('poll_start', {'question': poll_state['question'],
+                                      'options': poll_state['options']}, room=sid)
     await broadcast_stats()
 
 
 @sio.event
 async def disconnect(sid):
+    if sid in admins:
+        admins.discard(sid)
+        print(f"Admin disconnected: {sid}")
+        return
     if sid in connected_clients:
         print(f"Audience received disconnect: {sid}")
         connected_clients.remove(sid)
@@ -82,8 +180,11 @@ async def disconnect(sid):
 async def swipe(sid, data):
     """
     Event received when a user swipes up.
+    Only counts while the current stage has scrolling enabled.
     """
     if sid not in connected_clients:
+        return
+    if not current_stage().get('scroll_enabled'):
         return
 
     print(f"Swipe received from {sid}")
@@ -102,6 +203,92 @@ async def swipe(sid, data):
         await trigger_collective_action()
     else:
         await broadcast_stats()
+
+
+@sio.event
+async def vote(sid, data):
+    """Audience vote in the active poll. Re-voting replaces the previous vote."""
+    if not poll_state['active']:
+        return
+    option = (data or {}).get('option')
+    if not isinstance(option, int) or not (0 <= option < len(poll_state['options'])):
+        return
+    poll_state['votes'][sid] = option
+    await sio.emit('vote_ack', {'option': option}, room=sid)
+    await emit_poll_update()
+
+
+# --- Admin (performer console) over Socket.IO --------------------------------
+
+def _admin_ok(sid, data):
+    if sid in admins:
+        return True
+    if config.ADMIN_TOKEN:
+        return (data or {}).get('token', '') == config.ADMIN_TOKEN
+    return True
+
+
+def admin_snapshot():
+    return {
+        'stages': [{'id': s['id'], 'label': s['label'],
+                    'scroll_enabled': s['scroll_enabled'],
+                    'vibrate_ms': s.get('vibrate_ms', 0),
+                    'has_poll': bool(s.get('poll'))} for s in STAGES],
+        'stage': stage_payload(),
+        'poll': poll_payload(),
+        'active_users': len(connected_clients),
+        'triggered': len(triggered_clients),
+        'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD,
+        'td_connected': len(active_websockets),
+    }
+
+
+@sio.event
+async def register_admin(sid, data):
+    """The /admin page identifies itself so it's not counted as audience."""
+    if not _admin_ok(sid, data):
+        await sio.emit('admin_denied', {}, room=sid)
+        return
+    connected_clients.discard(sid)
+    triggered_clients.discard(sid)
+    admins.add(sid)
+    await sio.enter_room(sid, 'admins')
+    print(f"--> Admin registered: {sid}")
+    await sio.emit('admin_state', admin_snapshot(), room=sid)
+    await broadcast_stats()
+
+
+@sio.event
+async def admin_cmd(sid, data):
+    """All performer actions arrive here: {cmd: ..., ...args}."""
+    if sid not in admins:
+        return
+    data = data or {}
+    cmd = data.get('cmd')
+
+    if cmd == 'set_stage':
+        await apply_stage(data.get('stage', ''))
+    elif cmd == 'vibrate':
+        ms = int(data.get('ms', 300))
+        await bus.broadcast('vibrate', {'pattern': [max(1, min(ms, 5000))]})
+    elif cmd == 'trigger_scroll':
+        await trigger_collective_action()
+    elif cmd == 'reset_round':
+        triggered_clients.clear()
+        await broadcast_stats()
+    elif cmd == 'start_poll':
+        question = (data.get('question') or '').strip()
+        options = [o for o in (data.get('options') or []) if str(o).strip()]
+        if question and len(options) >= 2:
+            await start_poll(question, options[:2])
+    elif cmd == 'end_poll':
+        await end_poll()
+    elif cmd == 'event':
+        # Escape hatch: fire any named event with any payload (same as POST /admin/event).
+        if data.get('type'):
+            await bus.broadcast(data['type'], data.get('payload') or {})
+
+    await sio.emit('admin_state', admin_snapshot(), room='admins')
 
 
 # --- HTTP routes -----------------------------------------------------------
@@ -127,6 +314,8 @@ async def healthz(request):
         'triggered_clients': len(triggered_clients),
         'td_websockets': len(active_websockets),
         'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD,
+        'stage': current_stage()['id'],
+        'poll': poll_payload(),
     })
 
 
@@ -172,6 +361,12 @@ async def websocket_handler(request):
 
     print("--> TouchDesigner (Raw WS) connected")
     active_websockets.add(ws)
+
+    # Tell TD where the performance currently is the moment it connects.
+    try:
+        await ws.send_json({'event': 'stage_update', 'data': stage_payload()})
+    except Exception:
+        pass
 
     try:
         async for msg in ws:

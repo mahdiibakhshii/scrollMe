@@ -5,95 +5,269 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ScrollMe — Performer Console</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; }
         body {
             margin: 0; min-height: 100vh; background: #0b0b0d; color: #eaeaea;
             font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            display: flex; justify-content: center; padding: 24px;
+            display: flex; justify-content: center; padding: 20px;
         }
-        .wrap { width: 100%; max-width: 460px; }
+        .wrap { width: 100%; max-width: 520px; }
         h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
-        .sub { color: #8a8a92; font-size: 13px; margin-bottom: 20px; }
-        label { display: block; font-size: 12px; color: #9a9aa2; margin: 14px 0 5px; text-transform: uppercase; letter-spacing: .04em; }
+        .sub { color: #8a8a92; font-size: 13px; margin-bottom: 16px; }
+        h2 { font-size: 12px; font-weight: 600; color: #9a9aa2; text-transform: uppercase;
+             letter-spacing: .06em; margin: 0 0 10px; }
+        label { display: block; font-size: 12px; color: #9a9aa2; margin: 12px 0 5px;
+                text-transform: uppercase; letter-spacing: .04em; }
         input, textarea {
             width: 100%; background: #17171b; border: 1px solid #2a2a31; color: #eaeaea;
             border-radius: 8px; padding: 10px 12px; font: inherit; font-size: 14px;
         }
-        textarea { font-family: ui-monospace, "SF Mono", Menlo, monospace; min-height: 64px; resize: vertical; }
+        textarea { font-family: ui-monospace, "SF Mono", Menlo, monospace; min-height: 56px; resize: vertical; }
         button {
-            width: 100%; border: 0; border-radius: 8px; padding: 14px; margin-top: 10px;
-            font: inherit; font-weight: 600; cursor: pointer; color: #fff; background: #3b3bff;
+            border: 0; border-radius: 8px; padding: 12px 14px;
+            font: inherit; font-weight: 600; cursor: pointer; color: #fff; background: #26262e;
         }
-        button.big { padding: 20px; font-size: 17px; background: #d6003c; margin-top: 4px; }
         button:active { transform: translateY(1px); }
-        button.secondary { background: #26262e; }
+        button.accent { background: #3b3bff; }
+        button.danger { background: #d6003c; }
+        button.full { width: 100%; margin-top: 10px; }
+        .card { background: #131317; border: 1px solid #232329; border-radius: 12px;
+                padding: 16px; margin-bottom: 14px; }
         .row { display: flex; gap: 8px; }
-        .row button { margin-top: 0; }
-        .card { background: #131317; border: 1px solid #232329; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+        .row > * { flex: 1; }
+
+        /* live status header */
+        .status { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+        .stat { background: #131317; border: 1px solid #232329; border-radius: 12px;
+                padding: 12px 8px; text-align: center; }
+        .stat .num { font-size: 26px; font-weight: 700; line-height: 1.1; }
+        .stat .cap { font-size: 11px; color: #8a8a92; text-transform: uppercase; letter-spacing: .05em; }
+        .stat.ok .num { color: #7fd48a; }
+        .stat.warn .num { color: #ffb84d; }
+        #conn-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+                    background: #d6003c; margin-right: 6px; vertical-align: 1px; }
+        #conn-dot.live { background: #35c759; }
+
+        /* progress toward collective trigger */
+        .bar { height: 10px; background: #1c1c22; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+        .bar > div { height: 100%; width: 0%; background: #3b3bff; transition: width .25s ease; }
+
+        /* stage rail */
+        #stages { display: flex; flex-direction: column; gap: 8px; }
+        .stage-btn { display: flex; align-items: center; justify-content: space-between;
+                     text-align: left; padding: 14px; background: #1a1a20; border: 1px solid #2a2a31; }
+        .stage-btn .tags { font-size: 11px; color: #8a8a92; font-weight: 400; }
+        .stage-btn.active { background: #3b3bff; border-color: #3b3bff; }
+        .stage-btn.active .tags { color: #cfcfff; }
+
+        /* poll results */
+        .poll-row { margin-top: 10px; }
+        .poll-row .lbl { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 4px; }
+        .poll-row .bar > div { background: #7fd48a; }
+        #poll-live-q { font-size: 15px; font-weight: 600; }
+        #poll-total { color: #8a8a92; font-size: 13px; margin-top: 8px; }
+
         #log { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #7fd48a;
                background: #0f0f12; border: 1px solid #232329; border-radius: 8px; padding: 10px;
                min-height: 44px; white-space: pre-wrap; word-break: break-word; }
         .err { color: #ff7a7a !important; }
+        .muted { color: #8a8a92; }
     </style>
 </head>
 
 <body>
     <div class="wrap">
-        <h1>ScrollMe — Performer Console</h1>
-        <div class="sub">Fire events at TouchDesigner &amp; phones. Everything routes through <code>/admin/event</code>.</div>
+        <h1><span id="conn-dot"></span>ScrollMe — Performer Console</h1>
+        <div class="sub">Stage-driven show control. Everything is broadcast to phones + TouchDesigner.</div>
 
+        <!-- Live status -->
+        <div class="status">
+            <div class="stat ok"><div class="num" id="stat-users">–</div><div class="cap">online</div></div>
+            <div class="stat"><div class="num" id="stat-stage">–</div><div class="cap">stage</div></div>
+            <div class="stat warn"><div class="num" id="stat-td">–</div><div class="cap">TD links</div></div>
+        </div>
+
+        <!-- Scroll progress -->
         <div class="card">
-            <button class="big" onclick="send('trigger_scroll', {action:'next_reel'})">▲ NEXT REEL &nbsp;(trigger_scroll)</button>
-            <div class="row" style="margin-top:10px">
-                <button class="secondary" onclick="send('reset', {})">reset</button>
-                <button class="secondary" onclick="send('flash', {})">flash</button>
-                <button class="secondary" onclick="send('blackout', {})">blackout</button>
+            <h2>Collective scroll <span class="muted" id="progress-label"></span></h2>
+            <div class="bar"><div id="progress-bar"></div></div>
+            <div class="row" style="margin-top:12px">
+                <button class="danger" onclick="cmd({cmd:'trigger_scroll'})">▲ Next reel now</button>
+                <button onclick="cmd({cmd:'reset_round'})">Reset round</button>
             </div>
         </div>
 
+        <!-- Stages -->
         <div class="card">
-            <label for="tok">Admin token (if the server requires one)</label>
-            <input id="tok" type="password" placeholder="leave blank if open" autocomplete="off">
-
-            <label for="type">Custom event type</label>
-            <input id="type" placeholder="e.g. set_intensity" value="">
-
-            <label for="payload">Payload (JSON)</label>
-            <textarea id="payload">{}</textarea>
-
-            <button onclick="sendCustom()">Send custom event</button>
+            <h2>Performance stage</h2>
+            <div id="stages" class="muted">connecting…</div>
         </div>
 
-        <div id="log">ready.</div>
+        <!-- Vibrate -->
+        <div class="card">
+            <h2>Vibrate phones</h2>
+            <div class="row">
+                <button onclick="cmd({cmd:'vibrate', ms:200})">Short (200ms)</button>
+                <button onclick="cmd({cmd:'vibrate', ms:600})">Long (600ms)</button>
+                <button class="accent" onclick="cmd({cmd:'vibrate', ms:parseInt(document.getElementById('vib-ms').value)||300})">Custom →</button>
+            </div>
+            <input id="vib-ms" type="number" value="300" min="50" max="5000" step="50" style="margin-top:8px" placeholder="milliseconds">
+            <div class="muted" style="font-size:12px;margin-top:6px">Android only — iPhones ignore web vibration.</div>
+        </div>
+
+        <!-- Poll -->
+        <div class="card">
+            <h2>Poll</h2>
+            <div id="poll-live" style="display:none">
+                <div id="poll-live-q"></div>
+                <div class="poll-row"><div class="lbl"><span id="p0-lbl"></span><span id="p0-n"></span></div><div class="bar"><div id="p0-bar"></div></div></div>
+                <div class="poll-row"><div class="lbl"><span id="p1-lbl"></span><span id="p1-n"></span></div><div class="bar"><div id="p1-bar"></div></div></div>
+                <div id="poll-total"></div>
+                <button class="full danger" onclick="cmd({cmd:'end_poll'})">End poll</button>
+            </div>
+            <div id="poll-setup">
+                <label for="pq">Question</label>
+                <input id="pq" placeholder="e.g. Keep scrolling?">
+                <div class="row">
+                    <div><label for="po0">Option A</label><input id="po0" placeholder="Yes"></div>
+                    <div><label for="po1">Option B</label><input id="po1" placeholder="No"></div>
+                </div>
+                <button class="full accent" onclick="startPoll()">Start poll (vibrates phones)</button>
+            </div>
+        </div>
+
+        <!-- Custom event escape hatch -->
+        <div class="card">
+            <h2>Custom event → TD + phones</h2>
+            <label for="tok">Admin token (if the server requires one)</label>
+            <input id="tok" type="password" placeholder="leave blank if open" autocomplete="off">
+            <label for="type">Event type</label>
+            <input id="type" placeholder="e.g. set_intensity">
+            <label for="payload">Payload (JSON)</label>
+            <textarea id="payload">{}</textarea>
+            <button class="full" onclick="sendCustom()">Send custom event</button>
+        </div>
+
+        <div id="log">connecting…</div>
     </div>
 
     <script>
         const log = document.getElementById('log');
+        const $ = id => document.getElementById(id);
+        let stages = [];
+        let currentStage = '';
+
         function print(msg, isErr) {
             log.textContent = new Date().toLocaleTimeString() + '  ' + msg;
             log.classList.toggle('err', !!isErr);
         }
-        async function send(type, payload) {
-            const token = document.getElementById('tok').value.trim();
-            try {
-                const res = await fetch('/admin/event', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Admin-Token': token } : {}) },
-                    body: JSON.stringify({ type, payload })
-                });
-                const data = await res.json();
-                if (!res.ok) return print('✗ ' + (data.error || res.status), true);
-                print('✓ sent "' + type + '"  ' + JSON.stringify(payload));
-            } catch (e) { print('✗ ' + e.message, true); }
+
+        // token persists across reloads
+        $('tok').value = localStorage.getItem('scrollme_token') || '';
+        $('tok').addEventListener('change', () => localStorage.setItem('scrollme_token', $('tok').value.trim()));
+
+        const socket = io({ transports: ['websocket', 'polling'] });
+
+        function register() {
+            socket.emit('register_admin', { token: $('tok').value.trim() });
         }
+
+        socket.on('connect', () => { $('conn-dot').classList.add('live'); print('connected — registering as admin…'); register(); });
+        socket.on('disconnect', () => { $('conn-dot').classList.remove('live'); print('disconnected — reconnecting…', true); });
+        socket.on('admin_denied', () => print('✗ admin token rejected — set it in the Custom event card and reload', true));
+
+        socket.on('admin_state', (s) => {
+            stages = s.stages || [];
+            currentStage = s.stage && s.stage.stage;
+            renderStages();
+            updateStats(s.active_users, currentStage, s.td_connected);
+            updateProgress(s.triggered, s.active_users, s.threshold);
+            renderPoll(s.poll);
+            print('✓ admin live');
+        });
+
+        socket.on('stats_update', (d) => {
+            currentStage = d.stage || currentStage;
+            updateStats(d.active_users, currentStage, d.td_connected);
+            updateProgress(d.triggered, d.active_users, d.threshold);
+            renderStages();
+        });
+
+        socket.on('poll_update', renderPoll);
+        socket.on('trigger_scroll', () => print('▲ collective scroll fired'));
+
+        function updateStats(users, stage, td) {
+            if (users !== undefined) $('stat-users').textContent = users;
+            if (stage) $('stat-stage').textContent = stage;
+            if (td !== undefined) $('stat-td').textContent = td;
+        }
+
+        function updateProgress(triggered, users, threshold) {
+            if (triggered === undefined || !threshold) return;
+            const need = Math.max(1, Math.ceil((users || 0) * threshold));
+            const pct = Math.min(100, Math.round((triggered / need) * 100));
+            $('progress-bar').style.width = pct + '%';
+            $('progress-label').textContent = `— ${triggered}/${need} swipes (${pct}%)`;
+        }
+
+        function renderStages() {
+            const box = $('stages');
+            if (!stages.length) { box.textContent = 'no stages defined'; return; }
+            box.classList.remove('muted');
+            box.innerHTML = '';
+            stages.forEach(s => {
+                const b = document.createElement('button');
+                b.className = 'stage-btn' + (s.id === currentStage ? ' active' : '');
+                const tags = [
+                    s.scroll_enabled ? 'scroll' : null,
+                    s.vibrate_ms ? `vibe ${s.vibrate_ms}ms` : null,
+                    s.has_poll ? 'poll' : null
+                ].filter(Boolean).join(' · ');
+                b.innerHTML = `<span>${s.label}</span><span class="tags">${tags}</span>`;
+                b.onclick = () => cmd({ cmd: 'set_stage', stage: s.id });
+                box.appendChild(b);
+            });
+        }
+
+        function renderPoll(p) {
+            const live = $('poll-live'), setup = $('poll-setup');
+            if (!p || (!p.active && !p.total)) { live.style.display = 'none'; setup.style.display = ''; return; }
+            live.style.display = '';
+            setup.style.display = p.active ? 'none' : '';
+            $('poll-live-q').textContent = (p.active ? '● LIVE — ' : '○ ended — ') + p.question;
+            const total = p.total || 0;
+            [0, 1].forEach(i => {
+                const n = (p.counts && p.counts[i]) || 0;
+                const pct = total ? Math.round((n / total) * 100) : 0;
+                $(`p${i}-lbl`).textContent = (p.options && p.options[i]) || '';
+                $(`p${i}-n`).textContent = `${n} (${pct}%)`;
+                $(`p${i}-bar`).style.width = pct + '%';
+            });
+            $('poll-total').textContent = total + ' votes';
+        }
+
+        function cmd(payload) {
+            socket.emit('admin_cmd', payload);
+            print('→ ' + JSON.stringify(payload));
+        }
+
+        function startPoll() {
+            const q = $('pq').value.trim();
+            const opts = [$('po0').value.trim() || 'Yes', $('po1').value.trim() || 'No'];
+            if (!q) return print('✗ enter a question', true);
+            cmd({ cmd: 'vibrate', ms: 400 });       // heads-up buzz before the poll appears
+            cmd({ cmd: 'start_poll', question: q, options: opts });
+        }
+
         function sendCustom() {
-            const type = document.getElementById('type').value.trim();
+            const type = $('type').value.trim();
             if (!type) return print('✗ enter an event type', true);
             let payload = {};
-            try { payload = JSON.parse(document.getElementById('payload').value || '{}'); }
+            try { payload = JSON.parse($('payload').value || '{}'); }
             catch (e) { return print('✗ payload is not valid JSON', true); }
-            send(type, payload);
+            cmd({ cmd: 'event', type, payload });
         }
     </script>
 </body>
