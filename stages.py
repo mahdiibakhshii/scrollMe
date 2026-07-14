@@ -83,6 +83,23 @@ STAGES = [
         "screen": {"mode": "text", "text": "Scroll Me"},
     },
     {
+        # STEP 5 — second audience poll.
+        "id": "poll2",
+        "label": "5 · Poll 2 — are you poor?",
+        "scroll_enabled": False,
+        "vibrate_ms": 400,
+        "screen": {"mode": "white"},
+        "poll": {
+            "question": "Are you poor?",
+            "options": ["Yes", "No"],
+            # Personal reply shown to each voter after they answer (Yes / No).
+            "responses": [
+                "We're all poor on the inside.",
+                "What a glitch!",
+            ],
+        },
+    },
+    {
         "id": "idle",
         "label": "Idle / Pre-show",
         "scroll_enabled": False,
