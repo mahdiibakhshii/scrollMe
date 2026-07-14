@@ -21,9 +21,16 @@ admins = set()              # performer console sids (excluded from audience cou
 active_websockets = set()   # raw WS connections (TouchDesigner)
 
 # Performance stage — index into STAGES. The performer drives this from /admin;
-# every change is broadcast to phones + TD as `stage_update`. Boot into the
-# scroll stage so the plain swipe→threshold→TD loop works with no admin action.
-current_stage_index = next((i for i, s in enumerate(STAGES) if s['id'] == 'scroll'), 0)
+# every change is broadcast to phones + TD as `stage_update` (TD writes the
+# index into a Constant CHOP as its "state number"). Boot into the first stage
+# (intro / gather) — that's step 1 of the show.
+current_stage_index = 0
+
+# Stable per-phone label: the Nth person to open the page. Monotonic and never
+# reused — person 5 stays "5" for the whole show even if others leave, and a new
+# joiner always gets a fresh higher number. Used by the intro/gather screen.
+next_person_number = 1
+client_person = {}   # sid -> assigned number
 
 # Live poll — one at a time. Votes are keyed by sid so a re-tap changes the
 # vote instead of double-counting.
@@ -135,6 +142,7 @@ async def broadcast_stats():
 
     await sio.emit('stats_update', {
         'active_users': active_count,
+        'joined': next_person_number - 1,
         'triggered': trigger_count,
         'progress': percentage,
         'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD,
@@ -158,6 +166,27 @@ async def connect(sid, environ):
         await sio.emit('poll_start', {'question': poll_state['question'],
                                       'options': poll_state['options']}, room=sid)
     await broadcast_stats()
+    # The phone follows up with `hello` (carrying any number it already holds
+    # from a reload) so we can hand back a stable person label.
+
+
+@sio.event
+async def hello(sid, data):
+    """Phone announces itself and (re)claims its person number. On a fresh open
+    it has none, so we mint the next one; on a reload it sends the number it
+    cached, and we honor it so the label never changes mid-show."""
+    global next_person_number
+    if sid not in connected_clients:
+        return
+    prior = (data or {}).get('number')
+    if isinstance(prior, int) and prior > 0:
+        number = prior
+        next_person_number = max(next_person_number, prior + 1)
+    else:
+        number = next_person_number
+        next_person_number += 1
+    client_person[sid] = number
+    await sio.emit('you_are', {'number': number}, room=sid)
 
 
 @sio.event
@@ -169,8 +198,8 @@ async def disconnect(sid):
     if sid in connected_clients:
         print(f"Audience received disconnect: {sid}")
         connected_clients.remove(sid)
-        if sid in triggered_clients:
-            triggered_clients.remove(sid)
+        triggered_clients.discard(sid)
+        client_person.pop(sid, None)  # number is never reused; just stop tracking
         await broadcast_stats()
     else:
         print(f"Device disconnected: {sid}")
@@ -237,6 +266,7 @@ def admin_snapshot():
         'stage': stage_payload(),
         'poll': poll_payload(),
         'active_users': len(connected_clients),
+        'joined': next_person_number - 1,   # total phones that ever opened the page
         'triggered': len(triggered_clients),
         'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD,
         'td_connected': len(active_websockets),

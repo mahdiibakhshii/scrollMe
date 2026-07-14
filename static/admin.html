@@ -84,7 +84,7 @@
 
         <!-- Live status -->
         <div class="status">
-            <div class="stat ok"><div class="num" id="stat-users">–</div><div class="cap">online</div></div>
+            <div class="stat ok"><div class="num" id="stat-users">–</div><div class="cap" id="stat-users-cap">online</div></div>
             <div class="stat"><div class="num" id="stat-stage">–</div><div class="cap">stage</div></div>
             <div class="stat warn"><div class="num" id="stat-td">–</div><div class="cap">TD links</div></div>
         </div>
@@ -182,7 +182,7 @@
             stages = s.stages || [];
             currentStage = s.stage && s.stage.stage;
             renderStages();
-            updateStats(s.active_users, currentStage, s.td_connected);
+            updateStats(s.active_users, currentStage, s.td_connected, s.joined);
             updateProgress(s.triggered, s.active_users, s.threshold);
             renderPoll(s.poll);
             print('✓ admin live');
@@ -190,7 +190,7 @@
 
         socket.on('stats_update', (d) => {
             currentStage = d.stage || currentStage;
-            updateStats(d.active_users, currentStage, d.td_connected);
+            updateStats(d.active_users, currentStage, d.td_connected, d.joined);
             updateProgress(d.triggered, d.active_users, d.threshold);
             renderStages();
         });
@@ -198,10 +198,13 @@
         socket.on('poll_update', renderPoll);
         socket.on('trigger_scroll', () => print('▲ collective scroll fired'));
 
-        function updateStats(users, stage, td) {
+        function updateStats(users, stage, td, joined) {
             if (users !== undefined) $('stat-users').textContent = users;
             if (stage) $('stat-stage').textContent = stage;
             if (td !== undefined) $('stat-td').textContent = td;
+            // During the gather it's useful to see total arrivals, not just who's
+            // currently connected (people reload / drop). Show "online · N joined".
+            if (joined !== undefined) $('stat-users-cap').textContent = 'online · ' + joined + ' joined';
         }
 
         function updateProgress(triggered, users, threshold) {

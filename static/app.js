@@ -18,6 +18,20 @@ let pollActive = false;
 let startY = 0;
 let isSwiping = false;
 
+// Stable "you are the Nth person" label, assigned by the server on first open
+// and cached so a reload keeps the same number for the whole performance.
+let personNumber = parseInt(sessionStorage.getItem('scrollme_person'), 10) || null;
+
+function ordinal(n) {
+    const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function introText() {
+    if (!personNumber) return 'Joining the dream…';
+    return `You are the ${ordinal(personNumber)} person in my dream.\nLet's wait for the others to join.`;
+}
+
 function show(el) {
     [screenText, screenImage, screenPoll].forEach(s => s.classList.add('hidden'));
     el.classList.remove('hidden');
@@ -31,7 +45,11 @@ function render() {
         return;
     }
     const s = currentScreen || {};
-    if (s.mode === 'image' && s.image) {
+    if (s.mode === 'intro') {
+        mainText.textContent = introText();
+        show(screenText);
+        document.body.classList.remove('black');
+    } else if (s.mode === 'image' && s.image) {
         stageImage.src = s.image;
         show(screenImage);
         document.body.classList.remove('black');
@@ -54,6 +72,15 @@ function vibrate(pattern) {
 // Socket Events
 socket.on('connect', () => {
     console.log("Connected to server");
+    // Announce ourselves; send any number we already hold so a reload keeps it.
+    socket.emit('hello', { number: personNumber });
+});
+
+socket.on('you_are', (data) => {
+    personNumber = data.number;
+    sessionStorage.setItem('scrollme_person', String(personNumber));
+    console.log(`You are person #${personNumber}`);
+    if (currentScreen && currentScreen.mode === 'intro') render();
 });
 
 socket.on('connect_error', (err) => {

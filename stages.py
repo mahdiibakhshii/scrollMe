@@ -16,6 +16,10 @@ Fields per stage:
                     {"mode": "text",  "text": "..."}            centered text on white
                     {"mode": "image", "image": "static/..."}    full-screen image
                     {"mode": "black"}                            black screen
+                    {"mode": "intro"}                            per-person gather
+                        screen: "You are the Nth person in my dream…" where N is
+                        the stable join-order label the server assigned that
+                        phone when it opened the page (see main.py person_number).
   poll            optional {"question": "...", "options": ["A", "B"]} —
                   entering the stage starts this poll (phones show the two
                   buttons, votes stream live to the admin console). Leaving
@@ -25,6 +29,15 @@ These are placeholders — refine ids/labels/content as the show script firms up
 """
 
 STAGES = [
+    {
+        # STEP 1 — projector shows the QR code, audience opens the page and
+        # waits. Each phone shows its own "you are the Nth person" label.
+        "id": "intro",
+        "label": "1 · Intro / Gather (QR up)",
+        "scroll_enabled": False,
+        "vibrate_ms": 0,
+        "screen": {"mode": "intro"},
+    },
     {
         "id": "idle",
         "label": "Idle / Pre-show",

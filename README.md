@@ -62,7 +62,13 @@ laptop).
 ```python
 import json
 
-TARGET = 'button1'   # your Button COMP to pulse on trigger_scroll
+TARGET      = 'button1'     # your Button COMP to pulse on trigger_scroll
+STAGE_CHOP  = 'constant1'   # a Constant CHOP — value0 holds the current stage index
+
+# Stage index (the "state number" written to STAGE_CHOP). This is the position
+# in the server's stages.py list, sent as data.index on every stage_update:
+#   0 intro · 1 idle · 2 scroll · 3 poll · 4 image · 5 black · 6 end
+# (Keep this comment in sync with stages.py if you reorder the show.)
 
 def onConnect(dat):
     debug('WebSocket connected')
@@ -82,6 +88,7 @@ def onReceiveText(dat, rowIndex, message):
     except Exception:
         return
     event = msg.get('event')
+    data  = msg.get('data') or {}
     if event == 'keepalive':
         # Pong back so there's live traffic in BOTH directions (keeps the link
         # and any NAT mapping fresh). Purely for stability; the server does not
@@ -93,6 +100,16 @@ def onReceiveText(dat, rowIndex, message):
         return
     if event == 'trigger_scroll':
         op(TARGET).click()           # advance to the next reel
+        return
+    if event == 'stage_update':
+        # The performer switched the show to a new stage (also fires once right
+        # after TD connects, so the CHOP is always current). Store its index as
+        # the state number; drive the rest of the patch off this Constant CHOP.
+        idx = data.get('index')
+        if idx is not None:
+            op(STAGE_CHOP).par.value0 = idx
+            debug(f"stage -> {data.get('stage')} (index {idx})")
+        return
     # future events arrive here too — just switch on `event`
     return
 
@@ -105,6 +122,13 @@ def onReceivePing(dat, contents):
         pass
     return
 ```
+
+> **Constant CHOP setup:** add a **Constant CHOP** named `constant1` with a single
+> channel (`value0`). The callback writes the current stage index into it on every
+> `stage_update`, so anything downstream (a Switch TOP/SOP, `Select`, timeline
+> logic) can react to which stage the show is in by reading one number. The
+> server pushes the current stage the moment TD connects, so the CHOP is correct
+> even if TD starts mid-show.
 
 > The server sends a `keepalive` (+ a protocol ping) every ~15s so the connection
 > never idles out — that's what fixed the earlier ~30s disconnects (TD's
