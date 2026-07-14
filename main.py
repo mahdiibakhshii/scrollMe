@@ -34,6 +34,7 @@ connected_clients = set()   # audience phones (Socket.IO sids)
 triggered_clients = set()   # phones that swiped in the current round
 admins = set()              # performer console sids (excluded from audience counts)
 active_websockets = set()   # raw WS connections (TouchDesigner)
+finished_clients = set()    # finale stage: phones that have swiped to end their show
 
 # Performance stage — index into STAGES. The performer drives this from /admin;
 # every change is broadcast to phones + TD as `stage_update` (TD writes the
@@ -243,6 +244,7 @@ async def apply_stage(stage_id):
 
     s = current_stage()
     triggered_clients.clear()  # each stage starts a fresh swipe round
+    finished_clients.clear()   # finale "who ended the show" tally is per-entry
 
     # A running poll doesn't survive into a stage that doesn't declare one.
     if poll_state['active'] and not s.get('poll'):
@@ -263,6 +265,9 @@ async def apply_stage(stage_id):
 
     if s.get('solo'):
         await start_solo_scroll(s['solo'])
+
+    if s.get('finale'):
+        await broadcast_finale_progress()  # seed TD's value1 at 0% on entry
 
     await broadcast_stats()
     return True
@@ -304,6 +309,20 @@ async def manual_next_reel():
         await solo_scroll_success()
     else:
         await trigger_collective_action()
+
+
+def finale_progress_payload():
+    """Fraction of the online audience that has ended the show (swiped in the
+    finale stage). 0.0 → 1.0 — TD uses it as a fade-to-black amount."""
+    online = len(connected_clients)
+    finished = len(finished_clients)
+    percent = (finished / online) if online > 0 else 0.0
+    return {'finished': finished, 'online': online, 'percent': round(min(percent, 1.0), 4)}
+
+
+async def broadcast_finale_progress():
+    """Push the live finale percentage to TD (constant1 value1) + admin."""
+    await bus.broadcast('finale_progress', finale_progress_payload())
 
 
 def collective_threshold():
@@ -422,10 +441,13 @@ async def disconnect(sid):
         print(f"Audience received disconnect: {sid}")
         connected_clients.remove(sid)
         triggered_clients.discard(sid)
+        finished_clients.discard(sid)
         client_person.pop(sid, None)  # number is never reused; just stop tracking
         # Don't leave the show stalled waiting on a swipe that can never come.
         if solo_state['active'] and solo_state['phase'] == 'select' and solo_state['chosen_sid'] == sid:
             await pick_new_chosen()
+        if current_stage().get('finale'):
+            await broadcast_finale_progress()  # online count changed → new %
         await broadcast_stats()
     else:
         print(f"Device disconnected: {sid}")
@@ -475,6 +497,21 @@ async def swipe(sid, data):
 
 
 @sio.event
+async def finished(sid, data):
+    """Finale stage: a phone swiped to end its show. We tally these to publish a
+    live fraction (finished / online) that TD uses as a fade-to-black amount.
+    Idempotent (a re-announce on reconnect just re-adds the same sid)."""
+    if sid not in connected_clients:
+        return
+    if not current_stage().get('finale'):
+        return
+    if sid not in finished_clients:
+        finished_clients.add(sid)
+        print(f"Finale: {sid} finished ({len(finished_clients)}/{len(connected_clients)})")
+    await broadcast_finale_progress()
+
+
+@sio.event
 async def vote(sid, data):
     """Audience vote in the active poll. Re-voting replaces the previous vote."""
     if not poll_state['active']:
@@ -512,6 +549,7 @@ def admin_snapshot():
         'triggered': len(triggered_clients),
         'threshold': collective_threshold(),
         'threshold_info': threshold_info(),
+        'finale': finale_progress_payload(),
         'td_connected': len(active_websockets),
     }
 

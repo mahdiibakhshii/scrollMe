@@ -100,6 +100,12 @@
             </div>
         </div>
 
+        <!-- Finale progress (fade-to-black %) -->
+        <div class="card" id="finale-card" style="display:none">
+            <h2>Finale — ended the show <span class="muted" id="finale-label"></span></h2>
+            <div class="bar"><div id="finale-bar" style="background:#e0e0e0"></div></div>
+        </div>
+
         <!-- Stages -->
         <div class="card">
             <h2>Performance stage</h2>
@@ -186,6 +192,7 @@
             updateStats(s.active_users, currentStage, s.td_connected, s.joined);
             updateProgress(s.triggered, s.active_users, s.threshold);
             renderThresholdSrc(s.threshold_info, s.threshold);
+            renderFinale(s.finale);
             renderPoll(s.poll);
             print('✓ admin live');
         });
@@ -199,6 +206,19 @@
 
         socket.on('poll_update', renderPoll);
         socket.on('trigger_scroll', () => print('▲ collective scroll fired'));
+        socket.on('finale_progress', renderFinale);
+
+        function renderFinale(f) {
+            const card = $('finale-card');
+            if (!f || !f.online || (currentStage !== 'finale' && !f.finished)) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = '';
+            const pct = Math.round((f.percent || 0) * 100);
+            $('finale-bar').style.width = pct + '%';
+            $('finale-label').textContent = `— ${f.finished}/${f.online} (${pct}%)`;
+        }
 
         function updateStats(users, stage, td, joined) {
             if (users !== undefined) $('stat-users').textContent = users;

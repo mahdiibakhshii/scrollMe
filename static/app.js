@@ -170,6 +170,7 @@ function enterFinale() {
     if (finaleActive) return;
     finaleActive = true;
     stopSlideshow();
+    socket.emit('finished', {});    // count me toward the live finale %
     render();                       // black screen + "Thank you!"
     const src = finaleCfg && finaleCfg.sound;
     if (src) {
@@ -186,6 +187,8 @@ socket.on('connect', () => {
     console.log("Connected to server");
     // Announce ourselves; send any number we already hold so a reload keeps it.
     socket.emit('hello', { number: personNumber });
+    // If we already ended the show, re-announce so we stay counted after a blip.
+    if (finaleActive) socket.emit('finished', {});
 });
 
 socket.on('you_are', (data) => {

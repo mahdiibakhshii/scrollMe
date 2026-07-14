@@ -63,10 +63,12 @@ laptop).
 import json
 
 TARGET      = 'button1'     # your Button COMP to pulse on trigger_scroll
-STAGE_CHOP  = 'constant1'   # a Constant CHOP — value0 holds the current stage index
+STAGE_CHOP  = 'constant1'   # a Constant CHOP:
+                            #   value0 = current stage index (state number)
+                            #   value1 = finale fade-to-black amount (0..1)
 
-# Stage index (the "state number" written to STAGE_CHOP). This is the position
-# in the server's stages.py list, sent as data.index on every stage_update:
+# Stage index (the "state number" written to STAGE_CHOP value0). Position in the
+# server's stages.py list, sent as data.index on every stage_update:
 #   0 intro · 1 lost · 2 poll1 · 3 scroll1 · 4 poll2 · 5 collective1 ·
 #   6 collective2 · 7 finale · 8 idle · 9 scroll · 10 poll · 11 image ·
 #   12 black · 13 end
@@ -111,6 +113,12 @@ def onReceiveText(dat, rowIndex, message):
         if idx is not None:
             op(STAGE_CHOP).par.value0 = idx
             debug(f"stage -> {data.get('stage')} (index {idx})")
+        return
+    if event == 'finale_progress':
+        # Stage 8 only: live fraction (0..1) of the audience who have swiped to
+        # end their show. Use it as your fade-to-black amount. Sent on entry
+        # (seeded at 0) and again every time someone finishes or drops.
+        op(STAGE_CHOP).par.value1 = data.get('percent', 0.0)
         return
     # future events arrive here too — just switch on `event`
     return
