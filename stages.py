@@ -98,7 +98,7 @@ STAGES = [
         "solo": {
             "chosen_text": "You are the chosen one.\nScroll for us.",
             # Paraphrase of "I know what I feel, get this dopamine".
-            "result_text": "I know exactly what I feel — this dopamine hit is mine.",
+            "result_text": "I know exactly what it feels like — this dopamine hit is mine.",
             "not_chosen_text": "You are not the selected one.",
             "result_hold_ms": 4000,
         },
