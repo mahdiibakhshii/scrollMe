@@ -33,8 +33,9 @@ next_person_number = 1
 client_person = {}   # sid -> assigned number
 
 # Live poll — one at a time. Votes are keyed by sid so a re-tap changes the
-# vote instead of double-counting.
-poll_state = {'active': False, 'question': '', 'options': [], 'votes': {}}
+# vote instead of double-counting. `responses` (optional, one per option) is the
+# personal message each voter gets back the moment they answer.
+poll_state = {'active': False, 'question': '', 'options': [], 'votes': {}, 'responses': []}
 
 # Event bus — the single fan-out point to phones, TouchDesigner (raw WS + Socket.IO)
 # and OSC. Add new triggers by calling bus.broadcast('event_name', {...}).
@@ -68,9 +69,10 @@ def poll_payload():
     }
 
 
-async def start_poll(question, options):
+async def start_poll(question, options, responses=None):
     poll_state.update(active=True, question=question,
-                      options=list(options), votes={})
+                      options=list(options), votes={},
+                      responses=list(responses or []))
     await bus.broadcast('poll_start', {'question': question, 'options': list(options)})
     await emit_poll_update()
 
@@ -112,7 +114,8 @@ async def apply_stage(stage_id):
         await bus.broadcast('vibrate', {'pattern': [s['vibrate_ms']]})
 
     if s.get('poll'):
-        await start_poll(s['poll']['question'], s['poll']['options'])
+        await start_poll(s['poll']['question'], s['poll']['options'],
+                         s['poll'].get('responses'))
 
     await broadcast_stats()
     return True
@@ -243,7 +246,9 @@ async def vote(sid, data):
     if not isinstance(option, int) or not (0 <= option < len(poll_state['options'])):
         return
     poll_state['votes'][sid] = option
-    await sio.emit('vote_ack', {'option': option}, room=sid)
+    responses = poll_state.get('responses') or []
+    response = responses[option] if option < len(responses) else None
+    await sio.emit('vote_ack', {'option': option, 'response': response}, room=sid)
     await emit_poll_update()
 
 
@@ -310,7 +315,7 @@ async def admin_cmd(sid, data):
         question = (data.get('question') or '').strip()
         options = [o for o in (data.get('options') or []) if str(o).strip()]
         if question and len(options) >= 2:
-            await start_poll(question, options[:2])
+            await start_poll(question, options[:2], data.get('responses'))
     elif cmd == 'end_poll':
         await end_poll()
     elif cmd == 'event':

@@ -15,6 +15,7 @@ const pollButtons = Array.from(document.querySelectorAll('.poll-opt'));
 let scrollEnabled = true;
 let currentScreen = { mode: 'text', text: 'Scroll me' };
 let pollActive = false;
+let personalMessage = null;   // set after this phone votes; replaces the poll
 let startY = 0;
 let isSwiping = false;
 
@@ -39,6 +40,14 @@ function show(el) {
 
 // Render whatever the current stage (or active poll) demands.
 function render() {
+    // A personal poll reply takes over this phone's screen until the stage moves
+    // on (or the poll ends), even though the poll is still live for everyone else.
+    if (personalMessage) {
+        mainText.textContent = personalMessage;
+        show(screenText);
+        document.body.classList.remove('black');
+        return;
+    }
     if (pollActive) {
         show(screenPoll);
         document.body.classList.remove('black');
@@ -99,6 +108,7 @@ socket.on('stage_update', (data) => {
     const cfg = (data && data.config) || {};
     scrollEnabled = !!cfg.scroll_enabled;
     currentScreen = cfg.screen || { mode: 'text', text: 'Scroll me' };
+    personalMessage = null;   // a new stage clears any leftover poll reply
     console.log(`Stage: ${data.stage} (scroll ${scrollEnabled ? 'on' : 'off'})`);
     render();
 });
@@ -109,6 +119,7 @@ socket.on('vibrate', (data) => {
 
 socket.on('poll_start', (data) => {
     pollActive = true;
+    personalMessage = null;   // fresh poll — clear any previous reply
     pollQuestion.textContent = data.question || '';
     pollButtons.forEach((btn, i) => {
         btn.textContent = (data.options && data.options[i]) || '';
@@ -120,11 +131,17 @@ socket.on('poll_start', (data) => {
 
 socket.on('poll_end', () => {
     pollActive = false;
+    personalMessage = null;
     render();
 });
 
 socket.on('vote_ack', (data) => {
     pollButtons.forEach((btn, i) => btn.classList.toggle('selected', i === data.option));
+    // If this poll option carries a personal message, it takes over the screen.
+    if (data.response) {
+        personalMessage = data.response;
+        render();
+    }
 });
 
 socket.on('trigger_scroll', () => {

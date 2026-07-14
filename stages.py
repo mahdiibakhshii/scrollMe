@@ -24,7 +24,9 @@ Fields per stage:
   poll            optional {"question": "...", "options": ["A", "B"]} —
                   entering the stage starts this poll (phones show the two
                   buttons, votes stream live to the admin console). Leaving
-                  the stage ends it.
+                  the stage ends it. Optional "responses": ["...", "..."] gives
+                  each voter a personal message (one per option) that replaces
+                  the poll on *their* screen the instant they vote.
 
 These are placeholders — refine ids/labels/content as the show script firms up.
 """
@@ -57,7 +59,15 @@ STAGES = [
         "scroll_enabled": False,
         "vibrate_ms": 400,
         "screen": {"mode": "white"},
-        "poll": {"question": "Do you feel lost right now?", "options": ["Yes", "No"]},
+        "poll": {
+            "question": "Do you feel lost right now?",
+            "options": ["Yes", "No"],
+            # Personal reply shown to each voter after they answer (Yes / No).
+            "responses": [
+                "you feel me",
+                "Others in this room feel just like you.\nYou are not alone among the lost creatures here.",
+            ],
+        },
     },
     {
         "id": "idle",
