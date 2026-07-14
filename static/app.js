@@ -23,6 +23,13 @@ let pulseTimer = null;
 let startY = 0;
 let isSwiping = false;
 
+// Collective-scroll per-swiper feedback (stages.py "scroll_feedback"): after you
+// swipe, your phone buzzes and shows how many more scrolls are still needed,
+// holding that until the reel actually advances.
+let scrollFeedback = null;    // stage config object (or null when the stage lacks it)
+let scrollWaiting = false;    // this phone has swiped and is waiting for the room
+let scrollWaitText = '';
+
 // One-at-a-time solo-scroll state (see stages.py "solo" field).
 let soloActive = false;
 let soloIsChosen = false;
@@ -72,6 +79,13 @@ function render() {
             ? (soloPhase === 'result' ? (soloTexts.result || '') : (soloTexts.chosen || ''))
             : (soloTexts.not_chosen || '');
         show(screenSolo);
+        document.body.classList.remove('black');
+        return;
+    }
+    // Waiting-for-the-room feedback after this phone swiped in a collective stage.
+    if (scrollWaiting) {
+        mainText.textContent = scrollWaitText || 'Got it…';
+        show(screenText);
         document.body.classList.remove('black');
         return;
     }
@@ -138,7 +152,21 @@ socket.on('stage_update', (data) => {
     personalMessage = null;   // a new stage clears any leftover poll reply
     pulseOverride = null; clearTimeout(pulseTimer);   // and any leftover pulse
     soloActive = false;       // and any leftover solo round (a fresh solo_update follows if the new stage has one)
+    scrollFeedback = cfg.scroll_feedback || null;
+    scrollWaiting = false; scrollWaitText = '';   // fresh round on the new stage
     console.log(`Stage: ${data.stage} (scroll ${scrollEnabled ? 'on' : 'off'})`);
+    render();
+});
+
+socket.on('scroll_wait', (data) => {
+    // We swiped in a collective stage; show how many more are still needed.
+    scrollWaiting = true;
+    scrollWaitText = (data && data.text) || scrollWaitText;
+    render();
+});
+
+socket.on('scroll_reset', () => {
+    scrollWaiting = false; scrollWaitText = '';
     render();
 });
 
@@ -198,7 +226,10 @@ socket.on('vote_ack', (data) => {
 });
 
 socket.on('trigger_scroll', () => {
-    // Collective threshold reached — brief visual pulse as feedback.
+    // The reel advanced — clear any "waiting for the room" state and go back to
+    // the normal stage screen ("Scroll me"), with a brief visual pulse.
+    scrollWaiting = false; scrollWaitText = '';
+    render();
     mainText.style.opacity = '0.15';
     setTimeout(() => { mainText.style.opacity = '1'; }, 400);
 });
@@ -228,17 +259,26 @@ document.addEventListener('touchend', (e) => {
 
     // In a solo round only the chosen phone (during 'select') may swipe;
     // otherwise fall back to the normal scroll_enabled + no-active-poll gate.
+    // In a feedback stage, once you've swiped you're locked until the reel moves.
     const canSwipe = soloActive
         ? (soloIsChosen && soloPhase === 'select')
-        : (scrollEnabled && !pollActive);
+        : (scrollEnabled && !pollActive && !(scrollFeedback && scrollWaiting));
 
     // Detect upward swipe greater than 30 pixels
     if (diffY > 30 && canSwipe) {
         socket.emit('swipe', {});
-        // Subtle bounce animation to show feedback that swipe worked
-        const el = soloActive ? soloText : mainText;
-        el.classList.add('nudge');
-        setTimeout(() => el.classList.remove('nudge'), 150);
+        if (!soloActive && scrollFeedback) {
+            // Buzz + flip to the "waiting on the room" screen; the server sends the
+            // live remaining count via scroll_wait (shown text set there).
+            vibrate([(scrollFeedback.vibrate_ms) || 150]);
+            scrollWaiting = true;
+            render();
+        } else {
+            // Subtle bounce animation to show feedback that swipe worked
+            const el = soloActive ? soloText : mainText;
+            el.classList.add('nudge');
+            setTimeout(() => el.classList.remove('nudge'), 150);
+        }
     }
     isSwiping = false;
 });

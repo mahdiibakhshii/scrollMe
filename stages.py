@@ -27,6 +27,13 @@ Fields per stage:
                   the stage ends it. Optional "responses": ["...", "..."] gives
                   each voter a personal message (one per option) that replaces
                   the poll on *their* screen the instant they vote.
+  scroll_feedback optional {"waiting_text": "...{n}...", "vibrate_ms": N} on a
+                  collective (non-solo) scroll stage. After a phone swipes it
+                  buzzes and shows waiting_text (with {n} replaced by how many
+                  MORE swipes the room still needs), refreshed live as others
+                  swipe, until the reel advances — then it resets to the stage's
+                  normal screen. Non-swipers are unaffected. See main.py
+                  emit_scroll_feedback().
   threshold_from_poll
                   optional {"stage": "<poll stage id>", "option": <int>} —
                   makes this (collective, scroll_enabled) stage's swipe
@@ -143,6 +150,25 @@ STAGES = [
         "vibrate_ms": 0,
         "screen": {"mode": "text", "text": "Scroll me"},
         "threshold_from_poll": {"stage": "poll2", "option": 0},
+        "scroll_feedback": {
+            "waiting_text": "Got it — waiting on {n} more to scroll…",
+            "vibrate_ms": 150,
+        },
+    },
+    {
+        # STEP 7 — another collective doomscroll, identical mechanic to stage 6
+        # (same poll2-derived threshold + per-swiper feedback). Exists as its
+        # own stage so TD gets a distinct stage_update / state number.
+        "id": "collective2",
+        "label": "7 · Collective Doomscroll 2",
+        "scroll_enabled": True,
+        "vibrate_ms": 0,
+        "screen": {"mode": "text", "text": "Scroll me"},
+        "threshold_from_poll": {"stage": "poll2", "option": 0},
+        "scroll_feedback": {
+            "waiting_text": "Got it — waiting on {n} more to scroll…",
+            "vibrate_ms": 150,
+        },
     },
     {
         "id": "idle",

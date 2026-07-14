@@ -1,4 +1,5 @@
 import asyncio
+import math
 import random
 import socketio
 from aiohttp import web
@@ -272,6 +273,29 @@ def collective_threshold():
     return min(votes / online, 1.0)
 
 
+def scrolls_needed():
+    """How many swipes total are required to advance the reel right now."""
+    active = len(connected_clients)
+    return max(1, math.ceil(active * collective_threshold()))
+
+
+async def emit_scroll_feedback():
+    """In a collective stage with `scroll_feedback`, tell every phone that has
+    already swiped this round how many MORE swipes are still needed. Sent to
+    each swiper individually (their own room) and refreshed on every new swipe,
+    so the number ticks down live. Non-swipers never get it — they keep the
+    normal 'Scroll me' screen."""
+    cfg = current_stage().get('scroll_feedback')
+    if not cfg or not triggered_clients:
+        return
+    remaining = max(1, scrolls_needed() - len(triggered_clients))
+    template = (cfg.get('waiting_text') if isinstance(cfg, dict) else None) \
+        or 'Got it — waiting on {n} more to scroll…'
+    text = template.replace('{n}', str(remaining))
+    for target in list(triggered_clients):
+        await sio.emit('scroll_wait', {'remaining': remaining, 'text': text}, room=target)
+
+
 async def broadcast_stats():
     """Send current progress to all clients (admins listen too)."""
     active_count = len(connected_clients)
@@ -391,6 +415,8 @@ async def swipe(sid, data):
         await trigger_collective_action()
     else:
         await broadcast_stats()
+        # Per-swiper feedback: "your scroll is in, N more still needed."
+        await emit_scroll_feedback()
 
 
 @sio.event
@@ -480,6 +506,7 @@ async def admin_cmd(sid, data):
         await manual_next_reel()
     elif cmd == 'reset_round':
         triggered_clients.clear()
+        await sio.emit('scroll_reset', {})  # clear any 'waiting' text on phones
         await broadcast_stats()
     elif cmd == 'start_poll':
         question = (data.get('question') or '').strip()
