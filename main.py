@@ -38,6 +38,13 @@ client_person = {}   # sid -> assigned number
 # personal message each voter gets back the moment they answer.
 poll_state = {'active': False, 'question': '', 'options': [], 'votes': {}, 'responses': []}
 
+# Snapshotted poll results, keyed by the stage id that ran the poll — captured
+# when that poll ends, so a *later* stage can derive its behavior from an
+# earlier vote (e.g. the collective-doomscroll threshold = the share of the
+# room who voted "poor" in poll2). See collective_threshold().
+poll_results = {}
+poll_owner_stage = None  # stage id that started the active poll (None = ad-hoc admin poll)
+
 # One-at-a-time "solo scroll" mode (see stages.py "solo" field). Independent of
 # the collective threshold logic above — a stage uses exactly one of the two.
 # phase: 'select' (waiting for the chosen phone to swipe) or 'result' (just
@@ -77,7 +84,9 @@ def poll_payload():
     }
 
 
-async def start_poll(question, options, responses=None):
+async def start_poll(question, options, responses=None, owner=None):
+    global poll_owner_stage
+    poll_owner_stage = owner
     poll_state.update(active=True, question=question,
                       options=list(options), votes={},
                       responses=list(responses or []))
@@ -86,11 +95,17 @@ async def start_poll(question, options, responses=None):
 
 
 async def end_poll():
+    global poll_owner_stage
     if not poll_state['active']:
         return
     poll_state['active'] = False
+    # Preserve the final tally so a later stage can read it (keyed by the stage
+    # that owned the poll). Ad-hoc admin polls (owner=None) aren't recorded.
+    if poll_owner_stage:
+        poll_results[poll_owner_stage] = poll_counts()
     await bus.broadcast('poll_end', poll_payload())
     await emit_poll_update()
+    poll_owner_stage = None
 
 
 async def emit_poll_update():
@@ -188,7 +203,7 @@ async def apply_stage(stage_id):
 
     if s.get('poll'):
         await start_poll(s['poll']['question'], s['poll']['options'],
-                         s['poll'].get('responses'))
+                         s['poll'].get('responses'), owner=s['id'])
 
     if s.get('solo'):
         await start_solo_scroll(s['solo'])
@@ -235,6 +250,28 @@ async def manual_next_reel():
         await trigger_collective_action()
 
 
+def collective_threshold():
+    """The swipe ratio the room must reach to advance the reel in the CURRENT
+    stage. Normally the fixed config value (AUDIENCE_PERCENTAGE_THRESHOLD).
+
+    A stage may instead declare `threshold_from_poll` = {stage, option} to
+    derive the bar dynamically from an earlier vote: the threshold becomes the
+    share of the online audience that picked that option (e.g. stage 6 sets its
+    bar to the fraction who voted "poor" in poll2 — the room then has to
+    collectively out-swipe that fraction to move the reel). Clamped to <= 1.0;
+    if nobody's online the bar is 1.0 (unreachable)."""
+    tfp = current_stage().get('threshold_from_poll')
+    if not tfp:
+        return config.AUDIENCE_PERCENTAGE_THRESHOLD
+    counts = poll_results.get(tfp.get('stage'), [])
+    opt = tfp.get('option', 0)
+    votes = counts[opt] if 0 <= opt < len(counts) else 0
+    online = len(connected_clients)
+    if online <= 0:
+        return 1.0
+    return min(votes / online, 1.0)
+
+
 async def broadcast_stats():
     """Send current progress to all clients (admins listen too)."""
     active_count = len(connected_clients)
@@ -247,7 +284,7 @@ async def broadcast_stats():
         'joined': next_person_number - 1,
         'triggered': trigger_count,
         'progress': percentage,
-        'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD,
+        'threshold': collective_threshold(),
         'stage': current_stage()['id'],
         'td_connected': len(active_websockets),
     })
@@ -348,7 +385,9 @@ async def swipe(sid, data):
 
     ratio = len(triggered_clients) / active_count
 
-    if ratio >= config.AUDIENCE_PERCENTAGE_THRESHOLD:
+    # Threshold is normally the fixed config value, but a stage can derive it
+    # from an earlier poll (e.g. stage 6 = the share who voted "poor" in poll2).
+    if ratio >= collective_threshold():
         await trigger_collective_action()
     else:
         await broadcast_stats()
@@ -390,9 +429,23 @@ def admin_snapshot():
         'active_users': len(connected_clients),
         'joined': next_person_number - 1,   # total phones that ever opened the page
         'triggered': len(triggered_clients),
-        'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD,
+        'threshold': collective_threshold(),
+        'threshold_info': threshold_info(),
         'td_connected': len(active_websockets),
     }
+
+
+def threshold_info():
+    """Human-readable note about where the current stage's threshold comes from
+    (so the performer can see 'derived from poll2 Yes' in the console)."""
+    tfp = current_stage().get('threshold_from_poll')
+    if not tfp:
+        return None
+    counts = poll_results.get(tfp.get('stage'), [])
+    opt = tfp.get('option', 0)
+    votes = counts[opt] if 0 <= opt < len(counts) else 0
+    return {'from_stage': tfp.get('stage'), 'option': opt, 'votes': votes,
+            'recorded': tfp.get('stage') in poll_results}
 
 
 @sio.event
@@ -465,7 +518,7 @@ async def healthz(request):
         'connected_clients': len(connected_clients),
         'triggered_clients': len(triggered_clients),
         'td_websockets': len(active_websockets),
-        'threshold': config.AUDIENCE_PERCENTAGE_THRESHOLD,
+        'threshold': collective_threshold(),
         'stage': current_stage()['id'],
         'poll': poll_payload(),
     })

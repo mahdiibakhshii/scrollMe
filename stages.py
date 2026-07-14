@@ -27,6 +27,17 @@ Fields per stage:
                   the stage ends it. Optional "responses": ["...", "..."] gives
                   each voter a personal message (one per option) that replaces
                   the poll on *their* screen the instant they vote.
+  threshold_from_poll
+                  optional {"stage": "<poll stage id>", "option": <int>} —
+                  makes this (collective, scroll_enabled) stage's swipe
+                  threshold DYNAMIC: instead of the fixed config percentage,
+                  the bar becomes the share of the online audience who picked
+                  that option in the named earlier poll. E.g. stage 6 sets
+                  {"stage": "poll2", "option": 0} so the room must collectively
+                  out-swipe the fraction who voted "poor" (Yes = option 0) to
+                  advance the reel. The poll's final tally is snapshotted when
+                  that poll ends (main.py poll_results), so it survives into
+                  this later stage. See main.py collective_threshold().
   solo            optional {"chosen_text", "result_text", "not_chosen_text",
                   "result_hold_ms"} — turns this stage into ONE-AT-A-TIME
                   scrolling instead of the collective threshold: the server
@@ -119,6 +130,19 @@ STAGES = [
                 "What a glitch!",
             ],
         },
+    },
+    {
+        # STEP 6 — collective doomscroll, but the bar is set by poll2: the reel
+        # only advances once the share of the audience who swipe reaches the
+        # share who voted "poor" (Yes = option 0) in poll2. Everyone can scroll;
+        # it's the classic collective-threshold mechanic with a dynamic, vote-
+        # derived threshold (see main.py collective_threshold).
+        "id": "collective1",
+        "label": "6 · Collective Doomscroll",
+        "scroll_enabled": True,
+        "vibrate_ms": 0,
+        "screen": {"mode": "text", "text": "Scroll me"},
+        "threshold_from_poll": {"stage": "poll2", "option": 0},
     },
     {
         "id": "idle",
