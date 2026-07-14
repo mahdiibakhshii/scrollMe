@@ -70,6 +70,19 @@ STAGES = [
         },
     },
     {
+        # STEP 4 — active scroll round. Swipes count toward the threshold;
+        # reaching it fires trigger_scroll to TD (next reel), same as always.
+        # The performer can also force it early with "Next reel now" in admin
+        # — that additionally pulses every phone (main.py manual_next_reel):
+        # vibrate + "Something is happening inside the tent." until the
+        # vibration ends, then back to "Scroll Me".
+        "id": "scroll1",
+        "label": "4 · Scroll 1",
+        "scroll_enabled": True,
+        "vibrate_ms": 0,
+        "screen": {"mode": "text", "text": "Scroll Me"},
+    },
+    {
         "id": "idle",
         "label": "Idle / Pre-show",
         "scroll_enabled": False,

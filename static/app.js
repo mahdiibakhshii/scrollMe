@@ -16,6 +16,8 @@ let scrollEnabled = true;
 let currentScreen = { mode: 'text', text: 'Scroll me' };
 let pollActive = false;
 let personalMessage = null;   // set after this phone votes; replaces the poll
+let pulseOverride = null;     // admin's manual "next reel" pulse text
+let pulseTimer = null;
 let startY = 0;
 let isSwiping = false;
 
@@ -40,6 +42,14 @@ function show(el) {
 
 // Render whatever the current stage (or active poll) demands.
 function render() {
+    // The manual "next reel" pulse overrides everything else on screen until
+    // its own timer clears it (see the manual_pulse handler below).
+    if (pulseOverride) {
+        mainText.textContent = pulseOverride;
+        show(screenText);
+        document.body.classList.remove('black');
+        return;
+    }
     // A personal poll reply takes over this phone's screen until the stage moves
     // on (or the poll ends), even though the poll is still live for everyone else.
     if (personalMessage) {
@@ -109,6 +119,7 @@ socket.on('stage_update', (data) => {
     scrollEnabled = !!cfg.scroll_enabled;
     currentScreen = cfg.screen || { mode: 'text', text: 'Scroll me' };
     personalMessage = null;   // a new stage clears any leftover poll reply
+    pulseOverride = null; clearTimeout(pulseTimer);   // and any leftover pulse
     console.log(`Stage: ${data.stage} (scroll ${scrollEnabled ? 'on' : 'off'})`);
     render();
 });
@@ -117,9 +128,24 @@ socket.on('vibrate', (data) => {
     vibrate((data && data.pattern) || [300]);
 });
 
+socket.on('manual_pulse', (data) => {
+    // Performer forced the next reel from admin — vibrate + show the pulse
+    // line until the vibration ends, then fall back to the normal stage screen.
+    const ms = (data && (data.ms || (data.pattern && data.pattern[0]))) || 600;
+    pulseOverride = (data && data.text) || '';
+    render();
+    vibrate((data && data.pattern) || [ms]);
+    clearTimeout(pulseTimer);
+    pulseTimer = setTimeout(() => {
+        pulseOverride = null;
+        render();
+    }, ms);
+});
+
 socket.on('poll_start', (data) => {
     pollActive = true;
     personalMessage = null;   // fresh poll — clear any previous reply
+    pulseOverride = null; clearTimeout(pulseTimer);
     pollQuestion.textContent = data.question || '';
     pollButtons.forEach((btn, i) => {
         btn.textContent = (data.options && data.options[i]) || '';

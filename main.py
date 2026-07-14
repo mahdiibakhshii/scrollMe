@@ -136,6 +136,21 @@ async def trigger_collective_action():
     await broadcast_stats()
 
 
+async def manual_next_reel():
+    """Admin's "Next reel now" button — the performer forcing a reel change
+    rather than the audience earning it by swiping. Distinct from a
+    threshold-triggered advance: every phone also gets a brief vibrate +
+    pulse line ("Something is happening inside the tent.") that holds until
+    the vibration ends, then reverts to whatever the current stage shows."""
+    print("!!! MANUAL NEXT REEL (admin) !!!")
+    await bus.broadcast('manual_pulse', {
+        'pattern': [config.ADMIN_PULSE_MS],
+        'ms': config.ADMIN_PULSE_MS,
+        'text': config.ADMIN_PULSE_TEXT,
+    })
+    await trigger_collective_action()
+
+
 async def broadcast_stats():
     """Send current progress to all clients (admins listen too)."""
     active_count = len(connected_clients)
@@ -307,7 +322,7 @@ async def admin_cmd(sid, data):
         ms = int(data.get('ms', 300))
         await bus.broadcast('vibrate', {'pattern': [max(1, min(ms, 5000))]})
     elif cmd == 'trigger_scroll':
-        await trigger_collective_action()
+        await manual_next_reel()
     elif cmd == 'reset_round':
         triggered_clients.clear()
         await broadcast_stats()

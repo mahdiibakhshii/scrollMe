@@ -35,3 +35,10 @@ OSC_PORT = int(os.environ.get('OSC_PORT', '9000'))
 # Empty string = endpoint is open (fine for a closed local test). Set a token in
 # production via the server environment to require it.
 ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', '')
+
+# Manual "Next reel now" pulse — when the performer forces a reel change from
+# /admin (rather than the audience earning it by swiping), every phone
+# vibrates and shows this text until the vibration ends, then reverts to
+# whatever the current stage normally shows.
+ADMIN_PULSE_MS = int(os.environ.get('ADMIN_PULSE_MS', '600'))
+ADMIN_PULSE_TEXT = os.environ.get('ADMIN_PULSE_TEXT', 'Something is happening inside the tent.')
