@@ -49,6 +49,17 @@ STAGES = [
         "screen": {"mode": "white"},
     },
     {
+        # STEP 3 — first audience poll. Entering the stage buzzes every phone
+        # briefly and shows the two-option vote; results stream live to /admin.
+        # Question (translated from the Farsi «الان احساس گم شدگی میکنی؟»).
+        "id": "poll1",
+        "label": "3 · Poll 1 — feeling lost?",
+        "scroll_enabled": False,
+        "vibrate_ms": 400,
+        "screen": {"mode": "white"},
+        "poll": {"question": "Do you feel lost right now?", "options": ["Yes", "No"]},
+    },
+    {
         "id": "idle",
         "label": "Idle / Pre-show",
         "scroll_enabled": False,
