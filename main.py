@@ -1,4 +1,5 @@
 import asyncio
+import random
 import socketio
 from aiohttp import web
 import config
@@ -36,6 +37,13 @@ client_person = {}   # sid -> assigned number
 # vote instead of double-counting. `responses` (optional, one per option) is the
 # personal message each voter gets back the moment they answer.
 poll_state = {'active': False, 'question': '', 'options': [], 'votes': {}, 'responses': []}
+
+# One-at-a-time "solo scroll" mode (see stages.py "solo" field). Independent of
+# the collective threshold logic above — a stage uses exactly one of the two.
+# phase: 'select' (waiting for the chosen phone to swipe) or 'result' (just
+# swiped, holding its reward line before the next phone is chosen).
+solo_state = {'active': False, 'phase': 'select', 'chosen_sid': None,
+             'cfg': {}, 'timer_task': None}
 
 # Event bus — the single fan-out point to phones, TouchDesigner (raw WS + Socket.IO)
 # and OSC. Add new triggers by calling bus.broadcast('event_name', {...}).
@@ -90,6 +98,63 @@ async def emit_poll_update():
     await sio.emit('poll_update', poll_payload(), room='admins')
 
 
+def solo_payload():
+    cfg = solo_state.get('cfg') or {}
+    return {
+        'active': solo_state['active'],
+        'phase': solo_state['phase'],
+        'chosen_sid': solo_state['chosen_sid'],
+        'texts': {
+            'chosen': cfg.get('chosen_text', 'You are the chosen one. Scroll for us.'),
+            'result': cfg.get('result_text', ''),
+            'not_chosen': cfg.get('not_chosen_text', 'You are not the selected one.'),
+        },
+    }
+
+
+async def broadcast_solo_state():
+    await bus.broadcast('solo_update', solo_payload())
+
+
+async def pick_new_chosen():
+    """Randomly hand the swipe privilege to one currently-online phone."""
+    candidates = list(connected_clients)
+    solo_state['chosen_sid'] = random.choice(candidates) if candidates else None
+    solo_state['phase'] = 'select'
+    await broadcast_solo_state()
+
+
+async def start_solo_scroll(cfg):
+    solo_state.update(active=True, cfg=cfg or {})
+    await pick_new_chosen()
+
+
+async def stop_solo_scroll():
+    task = solo_state.get('timer_task')
+    if task:
+        task.cancel()
+    solo_state.update(active=False, phase='select', chosen_sid=None, timer_task=None)
+
+
+async def _solo_rotate_after(ms):
+    try:
+        await asyncio.sleep(ms / 1000)
+    except asyncio.CancelledError:
+        return
+    if solo_state['active']:
+        await pick_new_chosen()
+
+
+async def solo_scroll_success():
+    """The chosen phone swiped: advance the reel, hold its reward line, then
+    hand the privilege to a new random phone."""
+    solo_state['phase'] = 'result'
+    await broadcast_solo_state()
+    await trigger_collective_action()
+    hold_ms = (solo_state.get('cfg') or {}).get('result_hold_ms', 4000)
+    solo_state['timer_task'] = asyncio.create_task(_solo_rotate_after(hold_ms))
+
+
 async def apply_stage(stage_id):
     """Switch the performance to a stage: broadcast to phones + TD, run the
     stage's side effects (vibrate on entry, start/stop its poll)."""
@@ -108,6 +173,10 @@ async def apply_stage(stage_id):
     if poll_state['active'] and not s.get('poll'):
         await end_poll()
 
+    # Same for solo-scroll mode — it only runs while the current stage declares it.
+    if solo_state['active'] and not s.get('solo'):
+        await stop_solo_scroll()
+
     await bus.broadcast('stage_update', stage_payload())
 
     if s.get('vibrate_ms'):
@@ -116,6 +185,9 @@ async def apply_stage(stage_id):
     if s.get('poll'):
         await start_poll(s['poll']['question'], s['poll']['options'],
                          s['poll'].get('responses'))
+
+    if s.get('solo'):
+        await start_solo_scroll(s['solo'])
 
     await broadcast_stats()
     return True
@@ -183,6 +255,11 @@ async def connect(sid, environ):
     if poll_state['active']:
         await sio.emit('poll_start', {'question': poll_state['question'],
                                       'options': poll_state['options']}, room=sid)
+    if solo_state['active']:
+        if solo_state['chosen_sid'] is None:
+            await pick_new_chosen()  # nobody was online to choose from yet
+        else:
+            await sio.emit('solo_update', solo_payload(), room=sid)
     await broadcast_stats()
     # The phone follows up with `hello` (carrying any number it already holds
     # from a reload) so we can hand back a stable person label.
@@ -218,6 +295,9 @@ async def disconnect(sid):
         connected_clients.remove(sid)
         triggered_clients.discard(sid)
         client_person.pop(sid, None)  # number is never reused; just stop tracking
+        # Don't leave the show stalled waiting on a swipe that can never come.
+        if solo_state['active'] and solo_state['phase'] == 'select' and solo_state['chosen_sid'] == sid:
+            await pick_new_chosen()
         await broadcast_stats()
     else:
         print(f"Device disconnected: {sid}")
@@ -227,10 +307,20 @@ async def disconnect(sid):
 async def swipe(sid, data):
     """
     Event received when a user swipes up.
-    Only counts while the current stage has scrolling enabled.
+    Solo-scroll stages (see stages.py "solo") only accept a swipe from the
+    currently-chosen phone, during the 'select' phase, and never fall through
+    to the collective-threshold logic below. Any other stage keeps the
+    original scroll_enabled + percentage-threshold behavior unchanged.
     """
     if sid not in connected_clients:
         return
+
+    if solo_state['active']:
+        if sid == solo_state['chosen_sid'] and solo_state['phase'] == 'select':
+            print(f"Chosen swipe received from {sid}")
+            await solo_scroll_success()
+        return
+
     if not current_stage().get('scroll_enabled'):
         return
 

@@ -27,6 +27,18 @@ Fields per stage:
                   the stage ends it. Optional "responses": ["...", "..."] gives
                   each voter a personal message (one per option) that replaces
                   the poll on *their* screen the instant they vote.
+  solo            optional {"chosen_text", "result_text", "not_chosen_text",
+                  "result_hold_ms"} — turns this stage into ONE-AT-A-TIME
+                  scrolling instead of the collective threshold: the server
+                  randomly picks one online phone as "chosen"; only that
+                  phone's swipe advances the reel. Chosen phone shows
+                  chosen_text (green) then, after it swipes, result_text
+                  (still green) for result_hold_ms, then a new phone is
+                  chosen. Everyone else sees not_chosen_text (white) the whole
+                  time. This is a separate mechanic from `scroll_enabled` +
+                  the audience-percentage threshold, which stays available
+                  (unchanged) for any stage that omits "solo" — see main.py
+                  swipe() for how the two modes are kept independent.
 
 These are placeholders — refine ids/labels/content as the show script firms up.
 """
@@ -70,17 +82,26 @@ STAGES = [
         },
     },
     {
-        # STEP 4 — active scroll round. Swipes count toward the threshold;
-        # reaching it fires trigger_scroll to TD (next reel), same as always.
-        # The performer can also force it early with "Next reel now" in admin
-        # — that additionally pulses every phone (main.py manual_next_reel):
-        # vibrate + "Something is happening inside the tent." until the
-        # vibration ends, then back to "Scroll Me".
+        # STEP 4 — one-at-a-time scrolling. A single random phone is "chosen"
+        # at any moment and only its swipe advances the reel; everyone else
+        # just watches. After the chosen phone swipes it holds a reward line
+        # for result_hold_ms, then a new phone is chosen and the loop
+        # continues. The performer can still force a reel change early with
+        # "Next reel now" in admin — that's a separate, unaffected mechanic
+        # (main.py manual_next_reel) that pulses every phone regardless of
+        # who's chosen.
         "id": "scroll1",
-        "label": "4 · Scroll 1",
+        "label": "4 · Scroll 1 (one at a time)",
         "scroll_enabled": True,
         "vibrate_ms": 0,
-        "screen": {"mode": "text", "text": "Scroll Me"},
+        "screen": {"mode": "white"},
+        "solo": {
+            "chosen_text": "You are the chosen one.\nScroll for us.",
+            # Paraphrase of "I know what I feel, get this dopamine".
+            "result_text": "I know exactly what I feel — this dopamine hit is mine.",
+            "not_chosen_text": "You are not the selected one.",
+            "result_hold_ms": 4000,
+        },
     },
     {
         # STEP 5 — second audience poll.

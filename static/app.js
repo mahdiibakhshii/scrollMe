@@ -6,10 +6,12 @@ const socket = io({
 const screenText = document.getElementById('screen-text');
 const screenImage = document.getElementById('screen-image');
 const screenPoll = document.getElementById('screen-poll');
+const screenSolo = document.getElementById('screen-solo');
 const mainText = document.getElementById('main-text');
 const stageImage = document.getElementById('stage-image');
 const pollQuestion = document.getElementById('poll-question');
 const pollButtons = Array.from(document.querySelectorAll('.poll-opt'));
+const soloText = document.getElementById('solo-text');
 
 // State — everything is driven by the server's current stage.
 let scrollEnabled = true;
@@ -20,6 +22,12 @@ let pulseOverride = null;     // admin's manual "next reel" pulse text
 let pulseTimer = null;
 let startY = 0;
 let isSwiping = false;
+
+// One-at-a-time solo-scroll state (see stages.py "solo" field).
+let soloActive = false;
+let soloIsChosen = false;
+let soloPhase = 'select';     // 'select' | 'result'
+let soloTexts = {};
 
 // Stable "you are the Nth person" label, assigned by the server on first open
 // and cached so a reload keeps the same number for the whole performance.
@@ -36,11 +44,11 @@ function introText() {
 }
 
 function show(el) {
-    [screenText, screenImage, screenPoll].forEach(s => s.classList.add('hidden'));
+    [screenText, screenImage, screenPoll, screenSolo].forEach(s => s.classList.add('hidden'));
     el.classList.remove('hidden');
 }
 
-// Render whatever the current stage (or active poll) demands.
+// Render whatever the current stage (or active poll / solo round) demands.
 function render() {
     // The manual "next reel" pulse overrides everything else on screen until
     // its own timer clears it (see the manual_pulse handler below).
@@ -55,6 +63,15 @@ function render() {
     if (personalMessage) {
         mainText.textContent = personalMessage;
         show(screenText);
+        document.body.classList.remove('black');
+        return;
+    }
+    if (soloActive) {
+        screenSolo.classList.toggle('chosen', soloIsChosen);
+        soloText.textContent = soloIsChosen
+            ? (soloPhase === 'result' ? (soloTexts.result || '') : (soloTexts.chosen || ''))
+            : (soloTexts.not_chosen || '');
+        show(screenSolo);
         document.body.classList.remove('black');
         return;
     }
@@ -120,7 +137,16 @@ socket.on('stage_update', (data) => {
     currentScreen = cfg.screen || { mode: 'text', text: 'Scroll me' };
     personalMessage = null;   // a new stage clears any leftover poll reply
     pulseOverride = null; clearTimeout(pulseTimer);   // and any leftover pulse
+    soloActive = false;       // and any leftover solo round (a fresh solo_update follows if the new stage has one)
     console.log(`Stage: ${data.stage} (scroll ${scrollEnabled ? 'on' : 'off'})`);
+    render();
+});
+
+socket.on('solo_update', (data) => {
+    soloActive = !!(data && data.active);
+    soloIsChosen = !!(data && data.chosen_sid && data.chosen_sid === socket.id);
+    soloPhase = (data && data.phase) || 'select';
+    soloTexts = (data && data.texts) || {};
     render();
 });
 
@@ -146,6 +172,7 @@ socket.on('poll_start', (data) => {
     pollActive = true;
     personalMessage = null;   // fresh poll — clear any previous reply
     pulseOverride = null; clearTimeout(pulseTimer);
+    soloActive = false;
     pollQuestion.textContent = data.question || '';
     pollButtons.forEach((btn, i) => {
         btn.textContent = (data.options && data.options[i]) || '';
@@ -199,12 +226,19 @@ document.addEventListener('touchend', (e) => {
     const endY = e.changedTouches[0].clientY;
     const diffY = startY - endY;
 
+    // In a solo round only the chosen phone (during 'select') may swipe;
+    // otherwise fall back to the normal scroll_enabled + no-active-poll gate.
+    const canSwipe = soloActive
+        ? (soloIsChosen && soloPhase === 'select')
+        : (scrollEnabled && !pollActive);
+
     // Detect upward swipe greater than 30 pixels
-    if (diffY > 30 && scrollEnabled && !pollActive) {
+    if (diffY > 30 && canSwipe) {
         socket.emit('swipe', {});
         // Subtle bounce animation to show feedback that swipe worked
-        mainText.classList.add('nudge');
-        setTimeout(() => mainText.classList.remove('nudge'), 150);
+        const el = soloActive ? soloText : mainText;
+        el.classList.add('nudge');
+        setTimeout(() => el.classList.remove('nudge'), 150);
     }
     isSwiping = false;
 });
