@@ -128,3 +128,31 @@ body.black #main-text {
 #screen-solo.chosen #solo-text {
     color: #ffffff;
 }
+
+/* Finale slideshow: full-bleed cycling image with a plea overlaid on top */
+#screen-slideshow {
+    background: #000000;
+    justify-content: flex-start;
+}
+
+#slide-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#slide-overlay {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    padding: 7vh 6vw 4vh;
+    text-align: center;
+    color: #ffffff;
+    font-size: 7vw;
+    font-weight: 700;
+    line-height: 1.25;
+    white-space: pre-line;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85), 0 0 4px rgba(0, 0, 0, 0.7);
+}

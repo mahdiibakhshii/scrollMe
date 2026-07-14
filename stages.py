@@ -21,6 +21,19 @@ Fields per stage:
                         screen: "You are the Nth person in my dream…" where N is
                         the stable join-order label the server assigned that
                         phone when it opened the page (see main.py person_number).
+                    {"mode": "slideshow", "images": "auto"|[...],
+                     "interval_ms": N, "overlay": "..."}         cycling images
+                        Loops through images every interval_ms with overlay text
+                        on top. "images": "auto" is enumerated live from
+                        static/images/ (server-side), so files can be swapped
+                        freely. Pair with a "finale" (below) to end on a swipe.
+  finale          optional {"text": "...", "sound": "auto"|"static/...",
+                  "loop": bool} — used with a slideshow stage: a single swipe by
+                  any phone ends THAT phone's show — black screen + text, and the
+                  sound plays (looped). Terminal on the client: nothing changes
+                  after, the sound just keeps going. "sound": "auto" is taken
+                  from static/sound/. Audio needs the swipe (a user gesture) to
+                  start, which is why it's the swipe that triggers it.
   poll            optional {"question": "...", "options": ["A", "B"]} —
                   entering the stage starts this poll (phones show the two
                   buttons, votes stream live to the admin console). Leaving
@@ -168,6 +181,28 @@ STAGES = [
         "scroll_feedback": {
             "waiting_text": "Got it — waiting on {n} more to scroll…",
             "vibrate_ms": 150,
+        },
+    },
+    {
+        # STEP 8 (final) — slideshow of images with an overlay plea; one swipe by
+        # a phone ends its show: black screen, "Thank you!", and a looping sound.
+        # Terminal on the client (nothing else happens, the sound keeps playing).
+        # Images (static/images/) and sound (static/sound/) are read live from
+        # the folders, so the files can be swapped without editing this.
+        "id": "finale",
+        "label": "8 · Finale (slideshow → thank you)",
+        "scroll_enabled": True,
+        "vibrate_ms": 0,
+        "screen": {
+            "mode": "slideshow",
+            "images": "auto",          # filled from static/images/ at send time
+            "interval_ms": 300,        # 0.3s per image
+            "overlay": "Finish this nightmare, wake me up pls",
+        },
+        "finale": {
+            "text": "Thank you!",
+            "sound": "auto",           # filled from static/sound/ at send time
+            "loop": True,
         },
     },
     {

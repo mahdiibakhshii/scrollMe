@@ -12,6 +12,9 @@ const stageImage = document.getElementById('stage-image');
 const pollQuestion = document.getElementById('poll-question');
 const pollButtons = Array.from(document.querySelectorAll('.poll-opt'));
 const soloText = document.getElementById('solo-text');
+const screenSlideshow = document.getElementById('screen-slideshow');
+const slideImage = document.getElementById('slide-image');
+const slideOverlay = document.getElementById('slide-overlay');
 
 // State — everything is driven by the server's current stage.
 let scrollEnabled = true;
@@ -29,6 +32,14 @@ let isSwiping = false;
 let scrollFeedback = null;    // stage config object (or null when the stage lacks it)
 let scrollWaiting = false;    // this phone has swiped and is waiting for the room
 let scrollWaitText = '';
+
+// Finale (stage 8): slideshow of images, then one swipe ends the show on this
+// phone — black "Thank you!" + a looping sound. Terminal once entered.
+let slideTimer = null;
+let slideIndex = 0;
+let finaleCfg = null;         // {text, sound, loop} for the current stage, if any
+let finaleActive = false;     // this phone has ended the show (terminal)
+let finaleAudio = null;
 
 // One-at-a-time solo-scroll state (see stages.py "solo" field).
 let soloActive = false;
@@ -51,12 +62,20 @@ function introText() {
 }
 
 function show(el) {
-    [screenText, screenImage, screenPoll, screenSolo].forEach(s => s.classList.add('hidden'));
+    [screenText, screenImage, screenPoll, screenSolo, screenSlideshow].forEach(s => s.classList.add('hidden'));
     el.classList.remove('hidden');
 }
 
 // Render whatever the current stage (or active poll / solo round) demands.
 function render() {
+    // Finale is terminal: once this phone has ended the show, nothing else can
+    // take over the screen — black background, "Thank you!", sound keeps playing.
+    if (finaleActive) {
+        mainText.textContent = (finaleCfg && finaleCfg.text) || 'Thank you!';
+        show(screenText);
+        document.body.classList.add('black');
+        return;
+    }
     // The manual "next reel" pulse overrides everything else on screen until
     // its own timer clears it (see the manual_pulse handler below).
     if (pulseOverride) {
@@ -95,7 +114,11 @@ function render() {
         return;
     }
     const s = currentScreen || {};
-    if (s.mode === 'intro') {
+    if (s.mode === 'slideshow') {
+        slideOverlay.textContent = s.overlay || '';
+        show(screenSlideshow);
+        document.body.classList.remove('black');
+    } else if (s.mode === 'intro') {
         mainText.textContent = introText();
         show(screenText);
         document.body.classList.remove('black');
@@ -123,6 +146,41 @@ function vibrate(pattern) {
     if (navigator.vibrate) navigator.vibrate(pattern || 200);
 }
 
+function stopSlideshow() {
+    if (slideTimer) { clearInterval(slideTimer); slideTimer = null; }
+}
+
+function startSlideshow() {
+    stopSlideshow();
+    const imgs = (currentScreen && currentScreen.images) || [];
+    if (!imgs.length) return;
+    imgs.forEach(src => { const im = new Image(); im.src = src; });  // preload
+    slideIndex = 0;
+    slideImage.src = imgs[0];
+    const interval = (currentScreen && currentScreen.interval_ms) || 300;
+    slideTimer = setInterval(() => {
+        slideIndex = (slideIndex + 1) % imgs.length;
+        slideImage.src = imgs[slideIndex];
+    }, interval);
+}
+
+// A swipe in the finale stage ends the show on THIS phone. Must run inside the
+// swipe (a user gesture) so the browser lets the audio start.
+function enterFinale() {
+    if (finaleActive) return;
+    finaleActive = true;
+    stopSlideshow();
+    render();                       // black screen + "Thank you!"
+    const src = finaleCfg && finaleCfg.sound;
+    if (src) {
+        try {
+            finaleAudio = new Audio(src);
+            finaleAudio.loop = !finaleCfg || finaleCfg.loop !== false;
+            finaleAudio.play().catch(() => {});
+        } catch (e) { /* no audio available */ }
+    }
+}
+
 // Socket Events
 socket.on('connect', () => {
     console.log("Connected to server");
@@ -146,6 +204,7 @@ socket.on('disconnect', () => {
 });
 
 socket.on('stage_update', (data) => {
+    if (finaleActive) return;   // the show has ended on this phone — ignore everything
     const cfg = (data && data.config) || {};
     scrollEnabled = !!cfg.scroll_enabled;
     currentScreen = cfg.screen || { mode: 'text', text: 'Scroll me' };
@@ -154,6 +213,8 @@ socket.on('stage_update', (data) => {
     soloActive = false;       // and any leftover solo round (a fresh solo_update follows if the new stage has one)
     scrollFeedback = cfg.scroll_feedback || null;
     scrollWaiting = false; scrollWaitText = '';   // fresh round on the new stage
+    finaleCfg = cfg.finale || null;
+    if (currentScreen.mode === 'slideshow') startSlideshow(); else stopSlideshow();
     console.log(`Stage: ${data.stage} (scroll ${scrollEnabled ? 'on' : 'off'})`);
     render();
 });
@@ -254,8 +315,17 @@ document.addEventListener('touchmove', (e) => {
 
 document.addEventListener('touchend', (e) => {
     if (!isSwiping) return;
+    isSwiping = false;
+    if (finaleActive) return;   // show's over on this phone — swallow all input
     const endY = e.changedTouches[0].clientY;
     const diffY = startY - endY;
+
+    // Finale stage: any upward swipe ends the show on this phone. Handled here
+    // (not via the server) because starting the audio needs this user gesture.
+    if (diffY > 30 && currentScreen && currentScreen.mode === 'slideshow') {
+        enterFinale();
+        return;
+    }
 
     // In a solo round only the chosen phone (during 'select') may swipe;
     // otherwise fall back to the normal scroll_enabled + no-active-poll gate.
@@ -280,5 +350,4 @@ document.addEventListener('touchend', (e) => {
             setTimeout(() => el.classList.remove('nudge'), 150);
         }
     }
-    isSwiping = false;
 });

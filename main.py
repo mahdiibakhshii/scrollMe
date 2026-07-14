@@ -1,12 +1,25 @@
 import asyncio
 import math
+import os
 import random
+import re
+import sys
 import socketio
 from aiohttp import web
 import config
 from osc_client import OSCClient
 from events import EventBus
 from stages import STAGES
+
+# Force UTF-8 stdout/stderr so print()ing event payloads that contain non-ASCII
+# (stage labels use "→"/"·", texts use "—"/"…") never crashes on a Windows
+# cp1252 console — a UnicodeEncodeError in a broadcast's print would otherwise
+# abort the rest of a stage change. No-op on Linux (production).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 # Initialize Socket.IO Server
 sio = socketio.AsyncServer(async_mode='aiohttp', cors_allowed_origins='*')
@@ -62,9 +75,51 @@ def current_stage():
     return STAGES[current_stage_index]
 
 
+# --- Dynamic media (finale slideshow images + ending sound) ----------------
+# Enumerated live from the static/ folders so the performer can swap the files
+# freely without touching stages.py. A stage asks for this by setting an "auto"
+# media field (screen.images / finale.sound); resolve_stage_config fills it in.
+
+_IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif')
+_AUDIO_EXTS = ('.mp3', '.ogg', '.wav', '.m4a', '.aac')
+
+
+def _natural_key(name):
+    # "2.jpg" before "10.jpg": sort numeric chunks as numbers, not text.
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', name)]
+
+
+def _list_media(subdir, exts):
+    d = os.path.join('static', subdir)
+    try:
+        files = [f for f in os.listdir(d) if f.lower().endswith(exts)]
+    except FileNotFoundError:
+        return []
+    files.sort(key=_natural_key)
+    return [f'static/{subdir}/{f}' for f in files]
+
+
+def resolve_stage_config(s):
+    """Return the stage config with any 'auto' media fields filled from disk."""
+    screen = s.get('screen') or {}
+    fin = s.get('finale')
+    wants_images = screen.get('mode') == 'slideshow' and screen.get('images') == 'auto'
+    wants_sound = bool(fin) and fin.get('sound') == 'auto'
+    if not (wants_images or wants_sound):
+        return s
+    s = dict(s)
+    if wants_images:
+        s['screen'] = dict(screen, images=_list_media('images', _IMAGE_EXTS))
+    if wants_sound:
+        sounds = _list_media('sound', _AUDIO_EXTS)
+        s['finale'] = dict(fin, sound=sounds[0] if sounds else None)
+    return s
+
+
 def stage_payload():
     s = current_stage()
-    return {'stage': s['id'], 'index': current_stage_index, 'config': s}
+    return {'stage': s['id'], 'index': current_stage_index,
+            'config': resolve_stage_config(s)}
 
 
 def poll_counts():
