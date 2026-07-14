@@ -67,7 +67,7 @@ STAGE_CHOP  = 'constant1'   # a Constant CHOP — value0 holds the current stage
 
 # Stage index (the "state number" written to STAGE_CHOP). This is the position
 # in the server's stages.py list, sent as data.index on every stage_update:
-#   0 intro · 1 idle · 2 scroll · 3 poll · 4 image · 5 black · 6 end
+#   0 intro · 1 lost · 2 idle · 3 scroll · 4 poll · 5 image · 6 black · 7 end
 # (Keep this comment in sync with stages.py if you reorder the show.)
 
 def onConnect(dat):

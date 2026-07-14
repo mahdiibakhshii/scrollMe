@@ -16,6 +16,7 @@ Fields per stage:
                     {"mode": "text",  "text": "..."}            centered text on white
                     {"mode": "image", "image": "static/..."}    full-screen image
                     {"mode": "black"}                            black screen
+                    {"mode": "white"}                            blank white screen
                     {"mode": "intro"}                            per-person gather
                         screen: "You are the Nth person in my dream…" where N is
                         the stable join-order label the server assigned that
@@ -37,6 +38,15 @@ STAGES = [
         "scroll_enabled": False,
         "vibrate_ms": 0,
         "screen": {"mode": "intro"},
+    },
+    {
+        # STEP 2 — same hold as the intro (scrolling off), but every phone goes
+        # pure white. TD gets the stage_update too (state number below).
+        "id": "lost",
+        "label": "2 · I Got Lost",
+        "scroll_enabled": False,
+        "vibrate_ms": 0,
+        "screen": {"mode": "white"},
     },
     {
         "id": "idle",

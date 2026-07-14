@@ -57,6 +57,10 @@ function render() {
         mainText.textContent = '';
         show(screenText);
         document.body.classList.add('black');
+    } else if (s.mode === 'white') {
+        mainText.textContent = '';
+        show(screenText);
+        document.body.classList.remove('black');
     } else {
         mainText.textContent = (s.text !== undefined && s.text !== null) ? s.text : 'Scroll me';
         show(screenText);
