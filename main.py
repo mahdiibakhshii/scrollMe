@@ -146,8 +146,12 @@ async def _solo_rotate_after(ms):
 
 
 async def solo_scroll_success():
-    """The chosen phone swiped: advance the reel, hold its reward line, then
-    hand the privilege to a new random phone."""
+    """The chosen phone swiped (or the admin manually credited it — see
+    manual_next_reel): advance the reel, hold its reward line, then hand the
+    privilege to a new random phone."""
+    task = solo_state.get('timer_task')
+    if task:
+        task.cancel()  # don't let an earlier rotation fire on top of this one
     solo_state['phase'] = 'result'
     await broadcast_solo_state()
     await trigger_collective_action()
@@ -210,17 +214,25 @@ async def trigger_collective_action():
 
 async def manual_next_reel():
     """Admin's "Next reel now" button — the performer forcing a reel change
-    rather than the audience earning it by swiping. Distinct from a
-    threshold-triggered advance: every phone also gets a brief vibrate +
-    pulse line ("Something is happening inside the tent.") that holds until
-    the vibration ends, then reverts to whatever the current stage shows."""
+    rather than the audience earning it by swiping. Every phone also gets a
+    brief vibrate + pulse line ("Something is happening inside the tent.")
+    that holds until the vibration ends, then reverts to whatever the current
+    stage shows.
+
+    In a solo-scroll stage this is treated as if the currently-chosen phone
+    had swiped: the reel still advances, but the round also continues on
+    schedule (reward line, hold, then a new phone is chosen) instead of
+    leaving the old chosen phone stuck waiting forever."""
     print("!!! MANUAL NEXT REEL (admin) !!!")
     await bus.broadcast('manual_pulse', {
         'pattern': [config.ADMIN_PULSE_MS],
         'ms': config.ADMIN_PULSE_MS,
         'text': config.ADMIN_PULSE_TEXT,
     })
-    await trigger_collective_action()
+    if solo_state['active']:
+        await solo_scroll_success()
+    else:
+        await trigger_collective_action()
 
 
 async def broadcast_stats():
