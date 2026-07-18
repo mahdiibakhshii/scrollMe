@@ -4,8 +4,7 @@ TARGET      = 'button1'     # your Button COMP to pulse on trigger_scroll
 STAGE_CHOP  = 'constant1'   # a Constant CHOP:
                             #   value0 = current stage index (state number)
                             #   value1 = finale fade-to-black amount (0..1)
-                            #   value3 = live online-audience count
-                            #   (value2 is reserved for something else — not written here)
+                            #   value2 = live online-audience count
 
 # Stage index written to STAGE_CHOP value0 (data.index on every stage_update):
 #   0 intro · 1 lost · 2 poll1 · 3 scroll1 · 4 poll2 · 5 collective1 ·
@@ -53,7 +52,7 @@ def onReceiveText(dat, rowIndex, message):
     if event == 'audience_update':
         # Live count of currently-connected phones. Sent every time someone
         # joins, leaves, or a phone registers as an admin (admins don't count).
-        op(STAGE_CHOP).par.value3 = data.get('online', 0)
+        op(STAGE_CHOP).par.value2 = data.get('online', 0)
         return
     return
 
