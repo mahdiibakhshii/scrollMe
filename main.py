@@ -406,7 +406,7 @@ async def broadcast_stats():
 
 
 async def broadcast_audience():
-    """Push the live online-audience count to TD (constant1 value2) too —
+    """Push the live online-audience count to TD (constant1 value3) too —
     unlike stats_update above (Socket.IO only, phones + admin), this goes
     through the event bus so TD's raw WS gets it live as well. Call only from
     the three places connected_clients actually changes size (a phone joining,

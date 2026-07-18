@@ -69,7 +69,7 @@ TARGET      = 'button1'     # your Button COMP to pulse on trigger_scroll
 STAGE_CHOP  = 'constant1'   # a Constant CHOP:
                             #   value0 = current stage index (state number)
                             #   value1 = finale fade-to-black amount (0..1)
-                            #   value2 = live online-audience count
+                            #   value3 = live online-audience count
 
 # Stage index (the "state number" written to STAGE_CHOP value0). Position in the
 # server's stages.py list, sent as data.index on every stage_update:
@@ -127,7 +127,7 @@ def onReceiveText(dat, rowIndex, message):
     if event == 'audience_update':
         # Live count of currently-connected phones. Sent every time someone
         # joins, leaves, or a phone registers as an admin (admins don't count).
-        op(STAGE_CHOP).par.value2 = data.get('online', 0)
+        op(STAGE_CHOP).par.value3 = data.get('online', 0)
         return
     # future events arrive here too — just switch on `event`
     return
@@ -142,15 +142,16 @@ def onReceivePing(dat, contents):
     return
 ```
 
-> **Constant CHOP setup:** add a **Constant CHOP** named `constant1` with three
-> channels (`value0`, `value1`, `value2`). The callback writes the current stage
+> **Constant CHOP setup:** `constant1` needs (at least) four channels —
+> `value0`/`value1`/`value2`/`value3`. The callback writes the current stage
 > index into `value0` on every `stage_update`, the finale fade-to-black fraction
 > into `value1` on every `finale_progress`, and the live online-audience count
-> into `value2` on every `audience_update` — so anything downstream (a Switch
-> TOP/SOP, `Select`, timeline logic) can react to any of the three by reading one
-> number each. The server pushes the current stage the moment TD connects (and
-> `audience_update` fires again on the next join/leave), so the CHOP is correct
-> even if TD starts mid-show.
+> into `value3` on every `audience_update` (`value2` is reserved for something
+> else in the patch, not written by this callback) — so anything downstream (a
+> Switch TOP/SOP, `Select`, timeline logic) can react to any of these by reading
+> one number each. The server pushes the current stage the moment TD connects
+> (and `audience_update` fires again on the next join/leave), so the CHOP is
+> correct even if TD starts mid-show.
 
 > The server sends a `keepalive` (+ a protocol ping) every ~15s so the connection
 > never idles out — that's what fixed the earlier ~30s disconnects (TD's
