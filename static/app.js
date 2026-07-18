@@ -35,10 +35,15 @@ let scrollWaitText = '';
 
 // Finale (stage 8): slideshow of images, then one swipe ends the show on this
 // phone — black "Thank you!" + a looping sound. Terminal once entered.
+// finaleActive is cached in sessionStorage (like personNumber below) so an
+// auto-reload triggered by the connection-resilience watchdog can never
+// un-terminate a phone that already finished — it stays on the "Thank you!"
+// screen (just without the sound resuming) instead of popping back to the
+// slideshow.
 let slideTimer = null;
 let slideIndex = 0;
 let finaleCfg = null;         // {text, sound, loop} for the current stage, if any
-let finaleActive = false;     // this phone has ended the show (terminal)
+let finaleActive = sessionStorage.getItem('scrollme_finale') === '1';  // this phone has ended the show (terminal)
 let finaleAudio = null;
 
 // One-at-a-time solo-scroll state (see stages.py "solo" field).
@@ -169,6 +174,7 @@ function startSlideshow() {
 function enterFinale() {
     if (finaleActive) return;
     finaleActive = true;
+    sessionStorage.setItem('scrollme_finale', '1');
     stopSlideshow();
     socket.emit('finished', {});    // count me toward the live finale %
     render();                       // black screen + "Thank you!"
@@ -182,9 +188,62 @@ function enterFinale() {
     }
 }
 
+// --- Connection resilience --------------------------------------------------
+// Phones sit idle for minutes (screen locked / tab backgrounded) and mobile
+// browsers freeze JS timers while that happens — so Socket.IO's own ping/pong
+// AND its reconnection backoff timer both stop running. When the audience
+// picks the phone back up wanting to interact, the socket can be silently
+// dead with nothing driving a reconnect. Fix, in order:
+//   1. The instant the tab/screen comes back OR the audience touches the
+//      screen, nudge a reconnect immediately rather than waiting for
+//      socket.io's backoff timer (which may have been frozen mid-wait).
+//   2. If that doesn't recover within a few seconds (a truly zombied
+//      transport — seen on iOS Safari after long backgrounds), fall back to
+//      a full page reload. This is silent/automatic, not a "tap to reload"
+//      prompt: most of the audience won't be watching for a message, and a
+//      reload is cheap here — personNumber/finaleActive are cached in
+//      sessionStorage specifically so identity/terminal-state survive it.
+const RECONNECT_RELOAD_MS = 10000;   // still disconnected this long after a drop -> reload
+const CONN_BANNER_DELAY_MS = 1500;   // don't flash the banner on quick blips
+const connBanner = document.getElementById('conn-banner');
+let reconnectWatchdog = null;
+let bannerTimer = null;
+
+function armReconnectWatchdog() {
+    clearTimeout(reconnectWatchdog);
+    reconnectWatchdog = setTimeout(() => {
+        if (!socket.connected) location.reload();
+    }, RECONNECT_RELOAD_MS);
+}
+
+function showBannerSoon() {
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => {
+        if (!socket.connected && connBanner) connBanner.classList.remove('hidden');
+    }, CONN_BANNER_DELAY_MS);
+}
+
+function hideBanner() {
+    clearTimeout(bannerTimer);
+    if (connBanner) connBanner.classList.add('hidden');
+}
+
+function nudgeReconnect() {
+    if (!socket.connected) {
+        socket.connect();
+        armReconnectWatchdog();
+    }
+}
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) nudgeReconnect(); });
+window.addEventListener('pageshow', nudgeReconnect);
+window.addEventListener('focus', nudgeReconnect);
+
 // Socket Events
 socket.on('connect', () => {
     console.log("Connected to server");
+    clearTimeout(reconnectWatchdog);
+    hideBanner();
     // Announce ourselves; send any number we already hold so a reload keeps it.
     socket.emit('hello', { number: personNumber });
     // If we already ended the show, re-announce so we stay counted after a blip.
@@ -204,6 +263,8 @@ socket.on('connect_error', (err) => {
 
 socket.on('disconnect', () => {
     console.log("Disconnected");
+    showBannerSoon();
+    armReconnectWatchdog();
 });
 
 socket.on('stage_update', (data) => {
@@ -309,6 +370,10 @@ pollButtons.forEach((btn) => {
 document.addEventListener('touchstart', (e) => {
     startY = e.touches[0].clientY;
     isSwiping = true;
+    // The audience just re-engaged after however long the screen sat idle —
+    // if the socket died while nobody was looking, this is the moment to
+    // try to recover it, don't wait for a background timer.
+    nudgeReconnect();
 });
 
 document.addEventListener('touchmove', (e) => {
@@ -354,3 +419,9 @@ document.addEventListener('touchend', (e) => {
         }
     }
 });
+
+// Paint the correct screen immediately on load — matters now that finaleActive
+// can already be true on a fresh load (restored from sessionStorage, see
+// above), in which case nothing else would trigger a render() until the next
+// socket event, which stage_update ignores outright while finale is active.
+render();

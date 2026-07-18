@@ -156,3 +156,25 @@ body.black #main-text {
     white-space: pre-line;
     text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85), 0 0 4px rgba(0, 0, 0, 0.7);
 }
+
+/* Connection-lost banner — small, unobtrusive, never blocks the swipe gesture */
+#conn-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 10px 0 8px;
+    text-align: center;
+    font-size: 3.4vw;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.55);
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+#conn-banner.hidden {
+    display: none;
+}

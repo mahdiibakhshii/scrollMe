@@ -187,8 +187,37 @@
             socket.emit('register_admin', { token: $('tok').value.trim() });
         }
 
-        socket.on('connect', () => { $('conn-dot').classList.add('live'); print('connected — registering as admin…'); register(); });
-        socket.on('disconnect', () => { $('conn-dot').classList.remove('live'); print('disconnected — reconnecting…', true); });
+        // Same idle-disconnect problem as the phone client (static/app.js):
+        // the laptop can sleep or the browser tab can throttle in the
+        // background between performer actions, silently killing the socket
+        // and freezing socket.io's own reconnect timer along with it. Nudge a
+        // reconnect the instant the console regains focus, and fall back to a
+        // full reload if that doesn't recover within a few seconds — the
+        // console has no state worth preserving beyond the token, which
+        // already persists in localStorage.
+        const RECONNECT_RELOAD_MS = 10000;
+        let reconnectWatchdog = null;
+
+        function armReconnectWatchdog() {
+            clearTimeout(reconnectWatchdog);
+            reconnectWatchdog = setTimeout(() => {
+                if (!socket.connected) location.reload();
+            }, RECONNECT_RELOAD_MS);
+        }
+
+        function nudgeReconnect() {
+            if (!socket.connected) {
+                socket.connect();
+                armReconnectWatchdog();
+            }
+        }
+
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) nudgeReconnect(); });
+        window.addEventListener('pageshow', nudgeReconnect);
+        window.addEventListener('focus', nudgeReconnect);
+
+        socket.on('connect', () => { clearTimeout(reconnectWatchdog); $('conn-dot').classList.add('live'); print('connected — registering as admin…'); register(); });
+        socket.on('disconnect', () => { $('conn-dot').classList.remove('live'); print('disconnected — reconnecting…', true); armReconnectWatchdog(); });
         socket.on('admin_denied', () => print('✗ admin token rejected — set it in the Custom event card and reload', true));
 
         socket.on('admin_state', (s) => {
