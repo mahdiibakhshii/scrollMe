@@ -61,13 +61,27 @@ Fields per stage:
                   Kept working for future use; see main.py swipe().
 
 --- Current show (active) ---------------------------------------------------
-The live performance is now a tight five steps: gather → lost → two rounds of
-collective doomscrolling → finale. The reel advances on ONE steady rule — at
-least 50% of the currently-online audience must swipe (no poll-derived or
-one-at-a-time thresholds). Poll 1 / Poll 2 / Scroll 1 (solo) and the old
-placeholder stages were pulled out of the show and moved to ARCHIVED_STAGES
-below — kept, not deleted, so they can be dropped back in (or replaced with new
-stages the performer will script for those slots) without rewriting anything.
+The live performance is now: gather → lost → two rounds of collective
+doomscrolling → five placeholder steps → finale. The reel advances on ONE
+steady rule — at least 50% of the currently-online audience must swipe (no
+poll-derived or one-at-a-time thresholds). Poll 1 / Poll 2 / Scroll 1 (solo)
+and the old placeholder stages were pulled out of the show and moved to
+ARCHIVED_STAGES below — kept, not deleted, so they can be dropped back in (or
+replaced with new stages the performer will script for those slots) without
+rewriting anything.
+
+step5..step9 are bare placeholders: no scroll/poll/vibrate mechanic, just a
+distinct stage index. Their only job right now is to exist as their own
+admin-rail button — tapping one calls apply_stage() like any other stage
+change, which broadcasts stage_update {stage, index} to phones AND TD. TD's
+callback (td_websocket_callbacks.py) writes that index into constant1 value0,
+so each button is already wired to advance TD to its next action; there's
+nothing else to build server-side until the performer decides what each step
+should actually look/feel like on the phones.
+
+Active stage indices (data.index on stage_update, TD's STAGE_CHOP value0):
+  0 intro · 1 lost · 2 collective1 · 3 collective2 · 4 step5 · 5 step6 ·
+  6 step7 · 7 step8 · 8 step9 · 9 finale
 """
 
 STAGES = [
@@ -118,13 +132,58 @@ STAGES = [
         },
     },
     {
-        # STEP 5 (final) — slideshow of images with an overlay plea; one swipe by
-        # a phone ends its show: black screen, "Thank you!", and a looping sound.
-        # Terminal on the client (nothing else happens, the sound keeps playing).
-        # Images (static/images/) and sound (static/sound/) are read live from
-        # the folders, so the files can be swapped without editing this.
+        # STEP 5 — placeholder: no audience mechanic yet, just a distinct stage
+        # index. Tapping its admin button does exactly what any stage change
+        # does (apply_stage): broadcast stage_update (index below) to phones +
+        # TD, nothing else — so for now the button simply advances TD to its
+        # next action. Screen is blank/white until this step is scripted.
+        "id": "step5",
+        "label": "5 · Step 5 (placeholder — TD only)",
+        "scroll_enabled": False,
+        "vibrate_ms": 0,
+        "screen": {"mode": "white"},
+    },
+    {
+        # STEP 6 — same as step5, its own index.
+        "id": "step6",
+        "label": "6 · Step 6 (placeholder — TD only)",
+        "scroll_enabled": False,
+        "vibrate_ms": 0,
+        "screen": {"mode": "white"},
+    },
+    {
+        # STEP 7 — same as step5, its own index.
+        "id": "step7",
+        "label": "7 · Step 7 (placeholder — TD only)",
+        "scroll_enabled": False,
+        "vibrate_ms": 0,
+        "screen": {"mode": "white"},
+    },
+    {
+        # STEP 8 — same as step5, its own index.
+        "id": "step8",
+        "label": "8 · Step 8 (placeholder — TD only)",
+        "scroll_enabled": False,
+        "vibrate_ms": 0,
+        "screen": {"mode": "white"},
+    },
+    {
+        # STEP 9 — same as step5, its own index.
+        "id": "step9",
+        "label": "9 · Step 9 (placeholder — TD only)",
+        "scroll_enabled": False,
+        "vibrate_ms": 0,
+        "screen": {"mode": "white"},
+    },
+    {
+        # STEP 10 (final) — slideshow of images with an overlay plea; one swipe
+        # by a phone ends its show: black screen, "Thank you!", and a looping
+        # sound. Terminal on the client (nothing else happens, the sound just
+        # keeps going). Images (static/images/) and sound (static/sound/) are
+        # read live from the folders, so the files can be swapped without
+        # editing this.
         "id": "finale",
-        "label": "5 · Finale (slideshow → thank you)",
+        "label": "10 · Finale (slideshow → thank you)",
         "scroll_enabled": True,
         "vibrate_ms": 0,
         "screen": {
