@@ -31,7 +31,15 @@ jobs:
             git fetch --depth=1 origin main
             git reset --hard origin/main
             ./.venv/bin/pip install -r requirements.txt
-            pm2 restart scrollme --update-env
+            # Load the box's env (e.g. ADMIN_TOKEN from /etc/environment) so it's
+            # passed through to PM2, then (re)start FROM the ecosystem file so its
+            # `env` block is actually RE-APPLIED. A plain `pm2 restart <name>` does
+            # NOT re-read the ecosystem file, so changes there (e.g. the swipe
+            # threshold) would otherwise never reach the running process — they'd
+            # stay baked in from the very first `pm2 start`. startOrReload re-reads
+            # the file every deploy.
+            set -a; [ -f /etc/environment ] && . /etc/environment; set +a
+            pm2 startOrReload deploy/ecosystem.config.cjs --update-env
             pm2 save
             sleep 1
             curl -fsS http://127.0.0.1:8081/healthz && echo "  <- healthz OK"
