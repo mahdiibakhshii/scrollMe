@@ -35,11 +35,10 @@ Fields per stage:
                   from static/sound/. Audio needs the swipe (a user gesture) to
                   start, which is why it's the swipe that triggers it.
   poll            optional {"question": "...", "options": ["A", "B"]} —
-                  entering the stage starts this poll (phones show the two
-                  buttons, votes stream live to the admin console). Leaving
-                  the stage ends it. Optional "responses": ["...", "..."] gives
-                  each voter a personal message (one per option) that replaces
-                  the poll on *their* screen the instant they vote.
+                  entering the stage starts this poll. NOTE: no active stage
+                  uses this anymore (the poll stages were archived — see
+                  ARCHIVED_STAGES below); the engine is kept only for the
+                  admin console's manual poll launcher.
   scroll_feedback optional {"waiting_text": "...{n}...", "vibrate_ms": N} on a
                   collective (non-solo) scroll stage. After a phone swipes it
                   buzzes and shows waiting_text (with {n} replaced by how many
@@ -48,30 +47,27 @@ Fields per stage:
                   normal screen. Non-swipers are unaffected. See main.py
                   emit_scroll_feedback().
   threshold_from_poll
-                  optional {"stage": "<poll stage id>", "option": <int>} —
-                  makes this (collective, scroll_enabled) stage's swipe
-                  threshold DYNAMIC: instead of the fixed config percentage,
-                  the bar becomes the share of the online audience who picked
-                  that option in the named earlier poll. E.g. stage 6 sets
-                  {"stage": "poll2", "option": 0} so the room must collectively
-                  out-swipe the fraction who voted "poor" (Yes = option 0) to
-                  advance the reel. The poll's final tally is snapshotted when
-                  that poll ends (main.py poll_results), so it survives into
-                  this later stage. See main.py collective_threshold().
-  solo            optional {"chosen_text", "result_text", "not_chosen_text",
-                  "result_hold_ms"} — turns this stage into ONE-AT-A-TIME
-                  scrolling instead of the collective threshold: the server
-                  randomly picks one online phone as "chosen"; only that
-                  phone's swipe advances the reel. Chosen phone shows
-                  chosen_text (green) then, after it swipes, result_text
-                  (still green) for result_hold_ms, then a new phone is
-                  chosen. Everyone else sees not_chosen_text (white) the whole
-                  time. This is a separate mechanic from `scroll_enabled` +
-                  the audience-percentage threshold, which stays available
-                  (unchanged) for any stage that omits "solo" — see main.py
-                  swipe() for how the two modes are kept independent.
+                  optional {"stage": "<poll stage id>", "option": <int>} — makes
+                  a collective stage's swipe threshold DYNAMIC (the share of the
+                  audience who picked that option in an earlier poll) instead of
+                  the fixed config percentage. Currently UNUSED — the show now
+                  runs on one steady rule: the reel advances when at least 50%
+                  of the online audience swipe (config AUDIENCE_PERCENTAGE_
+                  THRESHOLD). The capability is retained for future use; see
+                  main.py collective_threshold().
+  solo            optional one-at-a-time scroll mode (server picks one "chosen"
+                  phone whose swipe alone advances the reel). Currently UNUSED —
+                  the solo Scroll 1 stage was archived (see ARCHIVED_STAGES).
+                  Kept working for future use; see main.py swipe().
 
-These are placeholders — refine ids/labels/content as the show script firms up.
+--- Current show (active) ---------------------------------------------------
+The live performance is now a tight five steps: gather → lost → two rounds of
+collective doomscrolling → finale. The reel advances on ONE steady rule — at
+least 50% of the currently-online audience must swipe (no poll-derived or
+one-at-a-time thresholds). Poll 1 / Poll 2 / Scroll 1 (solo) and the old
+placeholder stages were pulled out of the show and moved to ARCHIVED_STAGES
+below — kept, not deleted, so they can be dropped back in (or replaced with new
+stages the performer will script for those slots) without rewriting anything.
 """
 
 STAGES = [
@@ -94,103 +90,41 @@ STAGES = [
         "screen": {"mode": "white"},
     },
     {
-        # STEP 3 — first audience poll. Entering the stage buzzes every phone
-        # briefly and shows the two-option vote; results stream live to /admin.
-        # Question (translated from the Farsi «الان احساس گم شدگی میکنی؟»).
-        "id": "poll1",
-        "label": "3 · Poll 1 — feeling lost?",
-        "scroll_enabled": False,
-        "vibrate_ms": 400,
-        "screen": {"mode": "white"},
-        "poll": {
-            "question": "Do you feel lost right now?",
-            "options": ["Yes", "No"],
-            # Personal reply shown to each voter after they answer (Yes / No).
-            "responses": [
-                "you feel me",
-                "Others in this room feel just like you.\nYou are not alone among the lost creatures here.",
-            ],
-        },
-    },
-    {
-        # STEP 4 — one-at-a-time scrolling. A single random phone is "chosen"
-        # at any moment and only its swipe advances the reel; everyone else
-        # just watches. After the chosen phone swipes it holds a reward line
-        # for result_hold_ms, then a new phone is chosen and the loop
-        # continues. The performer can still force a reel change early with
-        # "Next reel now" in admin — that's a separate, unaffected mechanic
-        # (main.py manual_next_reel) that pulses every phone regardless of
-        # who's chosen.
-        "id": "scroll1",
-        "label": "4 · Scroll 1 (one at a time)",
-        "scroll_enabled": True,
-        "vibrate_ms": 0,
-        "screen": {"mode": "white"},
-        "solo": {
-            "chosen_text": "You are the chosen one.\nScroll for us.",
-            # Paraphrase of "I know what I feel, get this dopamine".
-            "result_text": "I know exactly what it feels like — this dopamine hit is mine.",
-            "not_chosen_text": "You are not the selected one.",
-            "result_hold_ms": 4000,
-        },
-    },
-    {
-        # STEP 5 — second audience poll.
-        "id": "poll2",
-        "label": "5 · Poll 2 — are you poor?",
-        "scroll_enabled": False,
-        "vibrate_ms": 400,
-        "screen": {"mode": "white"},
-        "poll": {
-            "question": "Are you poor?",
-            "options": ["Yes", "No"],
-            # Personal reply shown to each voter after they answer (Yes / No).
-            "responses": [
-                "We're all poor on the inside.",
-                "What a glitch!",
-            ],
-        },
-    },
-    {
-        # STEP 6 — collective doomscroll, but the bar is set by poll2: the reel
-        # only advances once the share of the audience who swipe reaches the
-        # share who voted "poor" (Yes = option 0) in poll2. Everyone can scroll;
-        # it's the classic collective-threshold mechanic with a dynamic, vote-
-        # derived threshold (see main.py collective_threshold).
+        # STEP 3 — collective doomscroll. One steady rule: everyone can scroll and
+        # the reel advances the moment at least 50% of the currently-online
+        # audience have swiped this round (fixed config bar, no poll derivation).
         "id": "collective1",
-        "label": "6 · Collective Doomscroll",
+        "label": "3 · Collective Doomscroll",
         "scroll_enabled": True,
         "vibrate_ms": 0,
         "screen": {"mode": "text", "text": "Scroll me"},
-        "threshold_from_poll": {"stage": "poll2", "option": 0},
         "scroll_feedback": {
             "waiting_text": "Got it — waiting on {n} more to scroll…",
             "vibrate_ms": 150,
         },
     },
     {
-        # STEP 7 — another collective doomscroll, identical mechanic to stage 6
-        # (same poll2-derived threshold + per-swiper feedback). Exists as its
-        # own stage so TD gets a distinct stage_update / state number.
+        # STEP 4 — another collective doomscroll, identical 50% mechanic to stage
+        # 3. Exists as its own stage so TD gets a distinct stage_update / state
+        # number.
         "id": "collective2",
-        "label": "7 · Collective Doomscroll 2",
+        "label": "4 · Collective Doomscroll 2",
         "scroll_enabled": True,
         "vibrate_ms": 0,
         "screen": {"mode": "text", "text": "Scroll me"},
-        "threshold_from_poll": {"stage": "poll2", "option": 0},
         "scroll_feedback": {
             "waiting_text": "Got it — waiting on {n} more to scroll…",
             "vibrate_ms": 150,
         },
     },
     {
-        # STEP 8 (final) — slideshow of images with an overlay plea; one swipe by
+        # STEP 5 (final) — slideshow of images with an overlay plea; one swipe by
         # a phone ends its show: black screen, "Thank you!", and a looping sound.
         # Terminal on the client (nothing else happens, the sound keeps playing).
         # Images (static/images/) and sound (static/sound/) are read live from
         # the folders, so the files can be swapped without editing this.
         "id": "finale",
-        "label": "8 · Finale (slideshow → thank you)",
+        "label": "5 · Finale (slideshow → thank you)",
         "scroll_enabled": True,
         "vibrate_ms": 0,
         "screen": {
@@ -205,23 +139,82 @@ STAGES = [
             "loop": True,
         },
     },
+]
+
+# --- Archived stages ---------------------------------------------------------
+# Pulled out of the active show but intentionally KEPT (not deleted) so they can
+# be re-inserted or replaced later. The server never loads this list — nothing
+# here has a stage index and none appear in the admin rail. The performer plans
+# to hand over new stages to occupy the poll1 / scroll1 / poll2 slots; until
+# then their original definitions live here for reference / restore.
+ARCHIVED_STAGES = [
+    {
+        # (was step 3) First audience poll — "feeling lost?" Yes/No with a
+        # per-voter personal reply. Removed: the show no longer polls.
+        "id": "poll1",
+        "label": "Archived · Poll 1 — feeling lost?",
+        "scroll_enabled": False,
+        "vibrate_ms": 400,
+        "screen": {"mode": "white"},
+        "poll": {
+            "question": "Do you feel lost right now?",
+            "options": ["Yes", "No"],
+            "responses": [
+                "you feel me",
+                "Others in this room feel just like you.\nYou are not alone among the lost creatures here.",
+            ],
+        },
+    },
+    {
+        # (was step 4) One-at-a-time solo scrolling. Removed: after "I Got Lost"
+        # the show goes straight to collective doomscrolling.
+        "id": "scroll1",
+        "label": "Archived · Scroll 1 (one at a time)",
+        "scroll_enabled": True,
+        "vibrate_ms": 0,
+        "screen": {"mode": "white"},
+        "solo": {
+            "chosen_text": "You are the chosen one.\nScroll for us.",
+            "result_text": "I know exactly what it feels like — this dopamine hit is mine.",
+            "not_chosen_text": "You are not the selected one.",
+            "result_hold_ms": 4000,
+        },
+    },
+    {
+        # (was step 5) Second audience poll — "are you poor?" It also used to
+        # derive the collective threshold; that's gone (fixed 50% now).
+        "id": "poll2",
+        "label": "Archived · Poll 2 — are you poor?",
+        "scroll_enabled": False,
+        "vibrate_ms": 400,
+        "screen": {"mode": "white"},
+        "poll": {
+            "question": "Are you poor?",
+            "options": ["Yes", "No"],
+            "responses": [
+                "We're all poor on the inside.",
+                "What a glitch!",
+            ],
+        },
+    },
+    # Old pre-show / generic placeholder stages (never part of the scripted show).
     {
         "id": "idle",
-        "label": "Idle / Pre-show",
+        "label": "Archived · Idle / Pre-show",
         "scroll_enabled": False,
         "vibrate_ms": 0,
         "screen": {"mode": "text", "text": "ScrollMe"},
     },
     {
         "id": "scroll",
-        "label": "Scroll",
+        "label": "Archived · Scroll",
         "scroll_enabled": True,
         "vibrate_ms": 0,
         "screen": {"mode": "text", "text": "Scroll me"},
     },
     {
         "id": "poll",
-        "label": "Poll",
+        "label": "Archived · Poll",
         "scroll_enabled": False,
         "vibrate_ms": 400,
         "screen": {"mode": "text", "text": ""},
@@ -229,21 +222,21 @@ STAGES = [
     },
     {
         "id": "image",
-        "label": "Image",
+        "label": "Archived · Image",
         "scroll_enabled": False,
         "vibrate_ms": 0,
         "screen": {"mode": "image", "image": "static/images/1.jpg"},
     },
     {
         "id": "black",
-        "label": "Blackout",
+        "label": "Archived · Blackout",
         "scroll_enabled": False,
         "vibrate_ms": 0,
         "screen": {"mode": "black"},
     },
     {
         "id": "end",
-        "label": "End",
+        "label": "Archived · End",
         "scroll_enabled": False,
         "vibrate_ms": 0,
         "screen": {"mode": "text", "text": "Thank you"},

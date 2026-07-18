@@ -70,12 +70,13 @@ STAGE_CHOP  = 'constant1'   # a Constant CHOP:
                             #   value0 = current stage index (state number)
                             #   value1 = finale fade-to-black amount (0..1)
                             #   value2 = live online-audience count
+                            #   value3 = live count of phones that swiped this
+                            #            round (resets to 0 when the reel advances)
 
 # Stage index (the "state number" written to STAGE_CHOP value0). Position in the
 # server's stages.py list, sent as data.index on every stage_update:
-#   0 intro · 1 lost · 2 poll1 · 3 scroll1 · 4 poll2 · 5 collective1 ·
-#   6 collective2 · 7 finale · 8 idle · 9 scroll · 10 poll · 11 image ·
-#   12 black · 13 end
+#   0 intro · 1 lost · 2 collective1 · 3 collective2 · 4 finale
+# (Poll 1 / Scroll 1 / Poll 2 + old placeholders were archived out of the show.)
 # (Keep this comment in sync with stages.py if you reorder the show.)
 
 def onConnect(dat):
@@ -129,6 +130,13 @@ def onReceiveText(dat, rowIndex, message):
         # joins, leaves, or a phone registers as an admin (admins don't count).
         op(STAGE_CHOP).par.value2 = data.get('online', 0)
         return
+    if event == 'scroll_update':
+        # Live count of phones that have swiped in the current round — drive a
+        # visual of "how many people scrolled" off this. Resets to 0 when the
+        # reel advances (also on stage change / admin reset). Sent on every swipe
+        # and every reset, and seeded once when TD connects.
+        op(STAGE_CHOP).par.value3 = data.get('scrolled', 0)
+        return
     # future events arrive here too — just switch on `event`
     return
 
@@ -142,15 +150,16 @@ def onReceivePing(dat, contents):
     return
 ```
 
-> **Constant CHOP setup:** add a **Constant CHOP** named `constant1` with three
-> channels (`value0`, `value1`, `value2`). The callback writes the current stage
-> index into `value0` on every `stage_update`, the finale fade-to-black fraction
-> into `value1` on every `finale_progress`, and the live online-audience count
-> into `value2` on every `audience_update` — so anything downstream (a Switch
-> TOP/SOP, `Select`, timeline logic) can react to any of the three by reading one
-> number each. The server pushes the current stage the moment TD connects (and
-> `audience_update` fires again on the next join/leave), so the CHOP is correct
-> even if TD starts mid-show.
+> **Constant CHOP setup:** add a **Constant CHOP** named `constant1` with four
+> channels (`value0`–`value3`). The callback writes the current stage index into
+> `value0` on every `stage_update`, the finale fade-to-black fraction into
+> `value1` on every `finale_progress`, the live online-audience count into
+> `value2` on every `audience_update`, and the live "how many people scrolled
+> this round" count into `value3` on every `scroll_update` (which resets to 0
+> when the reel advances) — so anything downstream (a Switch TOP/SOP, `Select`,
+> timeline logic) can react to any of the four by reading one number each. The
+> server seeds stage + audience + scroll counts the moment TD connects, so the
+> CHOP is correct even if TD starts mid-show.
 
 > The server sends a `keepalive` (+ a protocol ping) every ~15s so the connection
 > never idles out — that's what fixed the earlier ~30s disconnects (TD's

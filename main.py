@@ -270,6 +270,7 @@ async def apply_stage(stage_id):
         await broadcast_finale_progress()  # seed TD's value1 at 0% on entry
 
     await broadcast_stats()
+    await broadcast_scroll_count()  # fresh stage = fresh round → TD value3 = 0
     return True
 
 
@@ -300,9 +301,10 @@ async def trigger_collective_action():
     if osc_client:
         osc_client.send_message('/scroll_next', 1.0)
 
-    # Reset state
+    # Reset state — the round is over, so the "who scrolled" count goes to 0.
     triggered_clients.clear()
     await broadcast_stats()
+    await broadcast_scroll_count()   # -> TD constant1 value3 = 0
 
 
 async def manual_next_reel():
@@ -415,6 +417,16 @@ async def broadcast_audience():
     await bus.broadcast('audience_update', {'online': len(connected_clients)})
 
 
+async def broadcast_scroll_count():
+    """Push the live count of phones that have swiped in the CURRENT round to TD
+    (constant1 value3) so the projection can show how many people have scrolled.
+    Goes through the event bus (not just stats_update, which is Socket.IO-only)
+    so TD's raw WS gets it. Call wherever triggered_clients changes size — on a
+    swipe, and on every reset (reel triggers, stage change, admin reset round, a
+    swiper dropping): the count returns to 0 the instant the round resets."""
+    await bus.broadcast('scroll_update', {'scrolled': len(triggered_clients)})
+
+
 @sio.event
 async def connect(sid, environ):
     # Universal Welcome Message (Debug)
@@ -478,6 +490,7 @@ async def disconnect(sid):
             await broadcast_finale_progress()  # online count changed → new %
         await broadcast_audience()
         await broadcast_stats()
+        await broadcast_scroll_count()  # a swiper leaving changes the count → TD value3
     else:
         print(f"Device disconnected: {sid}")
 
@@ -515,12 +528,14 @@ async def swipe(sid, data):
 
     ratio = len(triggered_clients) / active_count
 
-    # Threshold is normally the fixed config value, but a stage can derive it
-    # from an earlier poll (e.g. stage 6 = the share who voted "poor" in poll2).
+    # One steady rule: advance the reel once at least 50% of the online audience
+    # have swiped this round (collective_threshold() is the fixed config value).
     if ratio >= collective_threshold():
-        await trigger_collective_action()
+        await trigger_collective_action()   # clears the round + broadcasts scroll count 0
     else:
         await broadcast_stats()
+        # Live count of who's scrolled so far → TD (constant1 value3).
+        await broadcast_scroll_count()
         # Per-swiper feedback: "your scroll is in, N more still needed."
         await emit_scroll_feedback()
 
@@ -610,6 +625,7 @@ async def register_admin(sid, data):
     await sio.emit('admin_state', admin_snapshot(), room=sid)
     await broadcast_audience()
     await broadcast_stats()
+    await broadcast_scroll_count()  # a phone becoming admin may drop it from the round
 
 
 @sio.event
@@ -631,6 +647,7 @@ async def admin_cmd(sid, data):
         triggered_clients.clear()
         await sio.emit('scroll_reset', {})  # clear any 'waiting' text on phones
         await broadcast_stats()
+        await broadcast_scroll_count()  # round cleared → TD value3 = 0
     elif cmd == 'start_poll':
         question = (data.get('question') or '').strip()
         options = [o for o in (data.get('options') or []) if str(o).strip()]
@@ -719,9 +736,12 @@ async def websocket_handler(request):
     print("--> TouchDesigner (Raw WS) connected")
     active_websockets.add(ws)
 
-    # Tell TD where the performance currently is the moment it connects.
+    # Tell TD where the performance currently is the moment it connects, and seed
+    # the live audience + scroll counts so its CHOP is correct even mid-show.
     try:
         await ws.send_json({'event': 'stage_update', 'data': stage_payload()})
+        await ws.send_json({'event': 'audience_update', 'data': {'online': len(connected_clients)}})
+        await ws.send_json({'event': 'scroll_update', 'data': {'scrolled': len(triggered_clients)}})
     except Exception:
         pass
 

@@ -5,11 +5,12 @@ STAGE_CHOP  = 'constant1'   # a Constant CHOP:
                             #   value0 = current stage index (state number)
                             #   value1 = finale fade-to-black amount (0..1)
                             #   value2 = live online-audience count
+                            #   value3 = live count of phones that swiped this
+                            #            round (resets to 0 when the reel advances)
 
 # Stage index written to STAGE_CHOP value0 (data.index on every stage_update):
-#   0 intro · 1 lost · 2 poll1 · 3 scroll1 · 4 poll2 · 5 collective1 ·
-#   6 collective2 · 7 finale · 8 idle · 9 scroll · 10 poll · 11 image ·
-#   12 black · 13 end
+#   0 intro · 1 lost · 2 collective1 · 3 collective2 · 4 finale
+# (Poll 1 / Scroll 1 / Poll 2 + old placeholders were archived out of the show.)
 
 def onConnect(dat):
     debug('WebSocket connected')
@@ -53,6 +54,12 @@ def onReceiveText(dat, rowIndex, message):
         # Live count of currently-connected phones. Sent every time someone
         # joins, leaves, or a phone registers as an admin (admins don't count).
         op(STAGE_CHOP).par.value2 = data.get('online', 0)
+        return
+    if event == 'scroll_update':
+        # Live count of phones that have swiped in the current round — use it to
+        # show how many people have scrolled. Resets to 0 when the reel advances
+        # (and on stage change / admin reset). Sent on every swipe + every reset.
+        op(STAGE_CHOP).par.value3 = data.get('scrolled', 0)
         return
     return
 

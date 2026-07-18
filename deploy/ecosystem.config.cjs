@@ -18,7 +18,8 @@ module.exports = {
         PORT: '8081',
         // TD connects over the internet via WebSocket, so the local OSC path is off.
         OSC_ENABLED: '0',
-        AUDIENCE_PERCENTAGE_THRESHOLD: '0.30',
+        // One steady rule: reel advances when >= 50% of the online audience swipe.
+        AUDIENCE_PERCENTAGE_THRESHOLD: '0.50',
         // ADMIN_TOKEN is a SECRET — never hardcode it here (public repo). Provide it
         // via the server environment (e.g. /etc/environment) and it's passed through.
         // Empty = the /admin/event endpoint is open (acceptable for a closed show).
