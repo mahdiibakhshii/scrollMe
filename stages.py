@@ -62,7 +62,7 @@ Fields per stage:
 
 --- Current show (active) ---------------------------------------------------
 The live performance is now: gather → lost → two rounds of collective
-doomscrolling → five placeholder steps → finale. The reel advances on ONE
+doomscrolling → six placeholder steps → finale. The reel advances on ONE
 steady rule — at least 50% of the currently-online audience must swipe (no
 poll-derived or one-at-a-time thresholds). Poll 1 / Poll 2 / Scroll 1 (solo)
 and the old placeholder stages were pulled out of the show and moved to
@@ -70,7 +70,7 @@ ARCHIVED_STAGES below — kept, not deleted, so they can be dropped back in (or
 replaced with new stages the performer will script for those slots) without
 rewriting anything.
 
-step5..step9 are bare placeholders: no scroll/poll/vibrate mechanic, just a
+step5..step10 are bare placeholders: no scroll/poll/vibrate mechanic, just a
 distinct stage index. Their only job right now is to exist as their own
 admin-rail button — tapping one calls apply_stage() like any other stage
 change, which broadcasts stage_update {stage, index} to phones AND TD. TD's
@@ -81,7 +81,7 @@ should actually look/feel like on the phones.
 
 Active stage indices (data.index on stage_update, TD's STAGE_CHOP value0):
   0 intro · 1 lost · 2 collective1 · 3 collective2 · 4 step5 · 5 step6 ·
-  6 step7 · 7 step8 · 8 step9 · 9 finale
+  6 step7 · 7 step8 · 8 step9 · 9 step10 · 10 finale
 """
 
 STAGES = [
@@ -176,14 +176,22 @@ STAGES = [
         "screen": {"mode": "white"},
     },
     {
-        # STEP 10 (final) — slideshow of images with an overlay plea; one swipe
+        # STEP 10 — same as step5, its own index.
+        "id": "step10",
+        "label": "10 · Step 10 (placeholder — TD only)",
+        "scroll_enabled": False,
+        "vibrate_ms": 0,
+        "screen": {"mode": "white"},
+    },
+    {
+        # STEP 11 (final) — slideshow of images with an overlay plea; one swipe
         # by a phone ends its show: black screen, "Thank you!", and a looping
         # sound. Terminal on the client (nothing else happens, the sound just
         # keeps going). Images (static/images/) and sound (static/sound/) are
         # read live from the folders, so the files can be swapped without
         # editing this.
         "id": "finale",
-        "label": "10 · Finale (slideshow → thank you)",
+        "label": "11 · Finale (slideshow → thank you)",
         "scroll_enabled": True,
         "vibrate_ms": 0,
         "screen": {

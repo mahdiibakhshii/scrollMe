@@ -10,9 +10,9 @@ STAGE_CHOP  = 'constant1'   # a Constant CHOP:
 
 # Stage index written to STAGE_CHOP value0 (data.index on every stage_update):
 #   0 intro · 1 lost · 2 collective1 · 3 collective2 · 4 step5 · 5 step6 ·
-#   6 step7 · 7 step8 · 8 step9 · 9 finale
+#   6 step7 · 7 step8 · 8 step9 · 9 step10 · 10 finale
 # (Poll 1 / Scroll 1 / Poll 2 + old placeholders were archived out of the show.
-#  step5..step9 are bare placeholders -- no mechanic yet, just their own index.)
+#  step5..step10 are bare placeholders -- no mechanic yet, just their own index.)
 
 def onConnect(dat):
     debug('WebSocket connected')
