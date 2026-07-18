@@ -110,6 +110,12 @@
         <div class="card">
             <h2>Performance stage</h2>
             <div id="stages" class="muted">connecting…</div>
+            <button class="full danger" style="margin-top:12px" onclick="resetPerformance()">⟲ Reset performance</button>
+            <div class="muted" style="font-size:12px;margin-top:6px">
+                Clears joined count, poll history and swipe/finale tallies, and
+                returns to the intro stage — for starting the next show clean.
+                Does not disconnect any phones.
+            </div>
         </div>
 
         <!-- Vibrate -->
@@ -287,6 +293,11 @@
         function cmd(payload) {
             socket.emit('admin_cmd', payload);
             print('→ ' + JSON.stringify(payload));
+        }
+
+        function resetPerformance() {
+            if (!confirm('Reset performance? This clears the joined count, poll history, and swipe/finale tallies, and jumps back to the intro stage. Connected phones stay connected.')) return;
+            cmd({ cmd: 'reset_performance' });
         }
 
         function startPoll() {

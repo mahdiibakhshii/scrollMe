@@ -273,6 +273,23 @@ async def apply_stage(stage_id):
     return True
 
 
+async def reset_performance():
+    """Admin 'Reset performance' — wipe everything that would otherwise carry
+    over from a finished show into the next one: join numbering (so the next
+    audience starts counting from 1 again), poll history/tallies (including
+    the snapshots that drive poll-derived thresholds), and swipe/finale round
+    state, then return to stage 0 (intro). Currently-connected phones are NOT
+    disconnected — this clears counters/history, not sockets."""
+    global next_person_number
+    if poll_state['active']:
+        await end_poll()
+    poll_state.update(question='', options=[], votes={}, responses=[])
+    poll_results.clear()
+    next_person_number = 1
+    client_person.clear()
+    await apply_stage(STAGES[0]['id'])  # clears triggered/finished, stops solo, broadcasts stage_update + stats
+
+
 async def trigger_collective_action():
     print("!!! COLLECTIVE SCROLL TRIGGERED !!!")
 
@@ -388,6 +405,16 @@ async def broadcast_stats():
     })
 
 
+async def broadcast_audience():
+    """Push the live online-audience count to TD (constant1 value2) too —
+    unlike stats_update above (Socket.IO only, phones + admin), this goes
+    through the event bus so TD's raw WS gets it live as well. Call only from
+    the three places connected_clients actually changes size (a phone joining,
+    leaving, or a phone re-registering as an admin) — no need to spam it on
+    every swipe/stage change where the online count itself didn't move."""
+    await bus.broadcast('audience_update', {'online': len(connected_clients)})
+
+
 @sio.event
 async def connect(sid, environ):
     # Universal Welcome Message (Debug)
@@ -396,6 +423,7 @@ async def connect(sid, environ):
     # Treat everyone as a client (Simplification requested by user)
     print(f"--> Client connected: {sid}")
     connected_clients.add(sid)
+    await broadcast_audience()
 
     # Sync the newcomer to where the performance currently is.
     await sio.emit('stage_update', stage_payload(), room=sid)
@@ -448,6 +476,7 @@ async def disconnect(sid):
             await pick_new_chosen()
         if current_stage().get('finale'):
             await broadcast_finale_progress()  # online count changed → new %
+        await broadcast_audience()
         await broadcast_stats()
     else:
         print(f"Device disconnected: {sid}")
@@ -579,6 +608,7 @@ async def register_admin(sid, data):
     await sio.enter_room(sid, 'admins')
     print(f"--> Admin registered: {sid}")
     await sio.emit('admin_state', admin_snapshot(), room=sid)
+    await broadcast_audience()
     await broadcast_stats()
 
 
@@ -608,6 +638,8 @@ async def admin_cmd(sid, data):
             await start_poll(question, options[:2], data.get('responses'))
     elif cmd == 'end_poll':
         await end_poll()
+    elif cmd == 'reset_performance':
+        await reset_performance()
     elif cmd == 'event':
         # Escape hatch: fire any named event with any payload (same as POST /admin/event).
         if data.get('type'):

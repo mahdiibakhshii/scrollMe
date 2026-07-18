@@ -57,7 +57,10 @@ laptop).
    networks block odd ports. No path needed — the server accepts the WebSocket on
    the **root path**, which is all the DAT can target. (`/ws` also works, as does
    `8080` on permissive networks.)
-3. In its callbacks DAT, parse the JSON envelope `{"event": ..., "data": ...}`:
+3. In its callbacks DAT, parse the JSON envelope `{"event": ..., "data": ...}`.
+   The canonical, up-to-date copy of this script lives at
+   [`td_websocket_callbacks.py`](td_websocket_callbacks.py) — paste it in
+   directly rather than retyping from here:
 
 ```python
 import json
@@ -66,6 +69,7 @@ TARGET      = 'button1'     # your Button COMP to pulse on trigger_scroll
 STAGE_CHOP  = 'constant1'   # a Constant CHOP:
                             #   value0 = current stage index (state number)
                             #   value1 = finale fade-to-black amount (0..1)
+                            #   value2 = live online-audience count
 
 # Stage index (the "state number" written to STAGE_CHOP value0). Position in the
 # server's stages.py list, sent as data.index on every stage_update:
@@ -120,6 +124,11 @@ def onReceiveText(dat, rowIndex, message):
         # (seeded at 0) and again every time someone finishes or drops.
         op(STAGE_CHOP).par.value1 = data.get('percent', 0.0)
         return
+    if event == 'audience_update':
+        # Live count of currently-connected phones. Sent every time someone
+        # joins, leaves, or a phone registers as an admin (admins don't count).
+        op(STAGE_CHOP).par.value2 = data.get('online', 0)
+        return
     # future events arrive here too — just switch on `event`
     return
 
@@ -133,11 +142,14 @@ def onReceivePing(dat, contents):
     return
 ```
 
-> **Constant CHOP setup:** add a **Constant CHOP** named `constant1` with a single
-> channel (`value0`). The callback writes the current stage index into it on every
-> `stage_update`, so anything downstream (a Switch TOP/SOP, `Select`, timeline
-> logic) can react to which stage the show is in by reading one number. The
-> server pushes the current stage the moment TD connects, so the CHOP is correct
+> **Constant CHOP setup:** add a **Constant CHOP** named `constant1` with three
+> channels (`value0`, `value1`, `value2`). The callback writes the current stage
+> index into `value0` on every `stage_update`, the finale fade-to-black fraction
+> into `value1` on every `finale_progress`, and the live online-audience count
+> into `value2` on every `audience_update` — so anything downstream (a Switch
+> TOP/SOP, `Select`, timeline logic) can react to any of the three by reading one
+> number each. The server pushes the current stage the moment TD connects (and
+> `audience_update` fires again on the next join/leave), so the CHOP is correct
 > even if TD starts mid-show.
 
 > The server sends a `keepalive` (+ a protocol ping) every ~15s so the connection
